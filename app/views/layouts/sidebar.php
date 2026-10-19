@@ -49,26 +49,36 @@
 
             <?php // ===== Área do cliente ===== ?>
             <?php if ($role === 'client'): ?>
+            <?php // Itens do cliente condicionados à matriz de permissões, para
+                  // respeitarem Permissions::DISABLED_MODULES (igual ao painel interno). ?>
+            <?php if (Permissions::canAccess($role, 'client_tickets')): ?>
             <li class="nav-item">
                 <a class="nav-link <?= ($currentPage ?? '') === 'tickets' ? 'active' : '' ?>" href="<?= baseUrl('tickets') ?>">
                     <i class="bi bi-ticket-detailed"></i> Minhas Demandas
                 </a>
             </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'client_schedule')): ?>
             <li class="nav-item">
                 <a class="nav-link <?= ($currentPage ?? '') === 'schedule' ? 'active' : '' ?>" href="<?= baseUrl('planning/clientSchedule') ?>">
                     <i class="bi bi-calendar-range"></i> Cronograma
                 </a>
             </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'client_tickets')): ?>
             <li class="nav-item">
                 <a class="nav-link <?= ($currentPage ?? '') === 'create' ? 'active' : '' ?>" href="<?= baseUrl('tickets/create') ?>">
                     <i class="bi bi-plus-circle"></i> Nova Demanda
                 </a>
             </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'documents')): ?>
             <li class="nav-item">
                 <a class="nav-link <?= ($currentPage ?? '') === 'documents' ? 'active' : '' ?>" href="<?= baseUrl('documents') ?>">
                     <i class="bi bi-folder"></i> Documentos
                 </a>
             </li>
+            <?php endif; ?>
             <?php
             $sidebarFullUser = (new User())->findById($user['id'] ?? 0);
             if ($sidebarFullUser && $sidebarFullUser['is_company_owner']): ?>
@@ -199,7 +209,7 @@
             <?php if (Permissions::canAccess($role, 'prospection')): ?>
             <li class="nav-item">
                 <a class="nav-link <?= ($currentPage ?? '') === 'prospection' ? 'active' : '' ?>" href="<?= baseUrl('prospection') ?>">
-                    <i class="bi bi-envelope-paper"></i> Prospecção E-mail
+                    <i class="bi bi-envelope-paper"></i> Enviar E-mail
                 </a>
             </li>
             <li class="nav-item">

@@ -8,9 +8,11 @@
             <h5 class="mb-0">Olá, <?= escape($user['name']) ?>!</h5>
             <small class="text-muted">Bem-vindo ao seu painel</small>
         </div>
+        <?php if (Permissions::canAccess($user['role'] ?? 'client', 'client_tickets')): ?>
         <a href="<?= baseUrl('tickets/create') ?>" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-lg"></i> Nova Demanda
         </a>
+        <?php endif; ?>
     </div>
 
     <?php if ($msg = flash('success')): ?>
@@ -22,6 +24,9 @@
         .stat-card.compact .stat-label { font-size: 0.68rem; margin-bottom: 2px; }
         .stat-card.compact .stat-value { font-size: 1.25rem; font-weight: 700; line-height: 1.1; }
     </style>
+    <?php // Conteúdo de demandas do cliente — oculto quando o módulo client_tickets
+          // está desativado (rebrand). Reativa automaticamente ao religar o módulo. ?>
+    <?php if (Permissions::canAccess($user['role'] ?? 'client', 'client_tickets')): ?>
     <div class="row row-cols-2 row-cols-md-5 g-2 mb-4">
         <div class="col">
             <div class="card stat-card compact">
@@ -141,6 +146,15 @@
             </div>
         </div>
     </div>
+    <?php else: ?>
+    <?php // Módulo de demandas do cliente desativado nesta instalação. ?>
+    <div class="card">
+        <div class="card-body text-center text-muted py-5">
+            <i class="bi bi-building" style="font-size:2rem;"></i>
+            <p class="mb-0 mt-2">Bem-vindo ao seu painel. Use o menu lateral para acessar suas opções.</p>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <?php require APP_PATH . '/views/layouts/footer.php'; ?>

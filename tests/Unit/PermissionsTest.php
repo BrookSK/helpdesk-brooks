@@ -127,13 +127,41 @@ final class PermissionsTest extends TestCase
         $this->assertFalse(Permissions::canAccess('comercial', 'settings'));
     }
 
+    // ---- Papel "equipe" ----
+
+    public function testEquipeVeApenasSeuEscopo(): void
+    {
+        // Deve ver: dashboard, account, notifications, agenda, videocall, prospection.
+        foreach (['dashboard', 'account', 'notifications', 'agenda', 'videocall', 'prospection'] as $mod) {
+            $this->assertTrue(Permissions::canAccess('equipe', $mod), "equipe deveria acessar {$mod}");
+        }
+        // Não deve ver módulos internos/admin nem a área do cliente.
+        foreach (['tickets', 'crm', 'marketing', 'social', 'planning', 'documents',
+                  'users', 'companies', 'settings', 'acessos', 'client_tickets'] as $mod) {
+            $this->assertFalse(Permissions::canAccess('equipe', $mod), "equipe NÃO deveria acessar {$mod}");
+        }
+        $this->assertFalse(Permissions::hasFullAccess('equipe'));
+    }
+
+    public function testEquipeEhPapelValido(): void
+    {
+        $this->assertTrue(Permissions::isValidRole('equipe'));
+        $this->assertContains('equipe', Permissions::ROLES);
+    }
+
     // ---- Client restrito ----
 
-    public function testClientRestritoAAreaDoCliente(): void
+    public function testClientRestritoAoNucleoMantido(): void
     {
-        $this->assertTrue(Permissions::canAccess('client', 'client_tickets'));
-        $this->assertTrue(Permissions::canAccess('client', 'client_schedule'));
-        // Nada de módulos internos
+        // Núcleo do painel do cliente que permanece nesta instalação.
+        $this->assertTrue(Permissions::canAccess('client', 'dashboard'));
+        $this->assertTrue(Permissions::canAccess('client', 'account'));
+        $this->assertTrue(Permissions::canAccess('client', 'notifications'));
+        // Demandas/cronograma/documentos do cliente foram desativados no rebrand.
+        $this->assertFalse(Permissions::canAccess('client', 'client_tickets'));
+        $this->assertFalse(Permissions::canAccess('client', 'client_schedule'));
+        $this->assertFalse(Permissions::canAccess('client', 'documents'));
+        // Nada de módulos internos.
         $this->assertFalse(Permissions::canAccess('client', 'crm'));
         $this->assertFalse(Permissions::canAccess('client', 'marketing'));
         $this->assertFalse(Permissions::canAccess('client', 'tickets'));

@@ -2,7 +2,7 @@
 
 class ProspectionController extends Controller
 {
-    private $accessRoles = ['super_admin', 'comercial', 'marketing', 'attendant'];
+    private $accessRoles = ['super_admin', 'comercial', 'marketing', 'attendant', 'equipe'];
     private $accountModel;
     private $prospectionModel;
     private $contactModel;
@@ -334,6 +334,14 @@ class ProspectionController extends Controller
 
         $totalPages = ceil($total / $perPage);
 
+        // Pop-up de configuração: o usuário ainda não conectou nenhuma conta de
+        // e-mail? Então a Caixa de Entrada abre um modal pedindo e-mail + senha
+        // (usa o servidor SMTP/IMAP padrão do sistema). Só faz sentido oferecer
+        // se o super admin já configurou o servidor padrão.
+        $hasAnyAccount = !empty($this->accountModel->getSingleByUser($user['id']));
+        $serverConfigured = trim((string) Config::get('prospection_smtp_host', '')) !== '';
+        $needsEmailSetup = !$hasAnyAccount && $serverConfigured;
+
         $this->view('prospection/inbox', [
             'user' => $user,
             'accounts' => $imapAccounts,
@@ -345,6 +353,8 @@ class ProspectionController extends Controller
             'totalPages' => $totalPages,
             'search' => $search,
             'error' => $error,
+            'needsEmailSetup' => $needsEmailSetup,
+            'serverConfigured' => $serverConfigured,
         ]);
     }
 

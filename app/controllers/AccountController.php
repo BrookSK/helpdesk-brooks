@@ -123,12 +123,59 @@ class AccountController extends Controller
         }
 
         $user = $this->currentUser();
-        $email = trim($_POST['institutional_email'] ?? '');
-        $password = $_POST['institutional_password'] ?? '';
-        $displayName = trim($_POST['institutional_display_name'] ?? '');
+        $result = $this->persistUserEmailAccount(
+            (int) $user['id'],
+            trim($_POST['institutional_email'] ?? ''),
+            $_POST['institutional_password'] ?? '',
+            trim($_POST['institutional_display_name'] ?? '')
+        );
 
+        if (!$result['ok']) {
+            flash('error', $result['error']);
+        } else {
+            flash('success', 'E-mail institucional salvo com sucesso!');
+        }
+        $this->redirect('account');
+    }
+
+    /**
+     * Versão AJAX de updateEmail, usada pelo pop-up de configuração que aparece
+     * na Caixa de Entrada quando o usuário ainda não conectou seu e-mail.
+     * Retorna JSON {success|error}.
+     */
+    public function saveEmailAjax()
+    {
+        $this->requireLogin();
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'Método inválido.'], 405);
+        }
+
+        $user = $this->currentUser();
+        $result = $this->persistUserEmailAccount(
+            (int) $user['id'],
+            trim($_POST['institutional_email'] ?? ''),
+            $_POST['institutional_password'] ?? '',
+            trim($_POST['institutional_display_name'] ?? '')
+        );
+
+        if (!$result['ok']) {
+            $this->json(['error' => $result['error']], 422);
+        }
+        $this->json(['success' => true, 'message' => 'E-mail conectado com sucesso!']);
+    }
+
+    /**
+     * Valida, monta e persiste a conta de e-mail pessoal do usuário a partir do
+     * servidor padrão + e-mail/senha informados. Fonte única usada tanto pelo
+     * fluxo de "Minha Conta" (updateEmail) quanto pelo pop-up da Caixa de
+     * Entrada (saveEmailAjax).
+     *
+     * @return array{ok:bool,error:?string}
+     */
+    private function persistUserEmailAccount(int $userId, string $email, string $password, string $displayName): array
+    {
         $accountModel = new EmailAccount();
-        $existing = $accountModel->getSingleByUser($user['id']);
+        $existing = $accountModel->getSingleByUser($userId);
         $isNew = empty($existing);
 
         // Defaults do servidor padrão (definidos pelo super admin).
@@ -143,26 +190,23 @@ class AccountController extends Controller
 
         $error = UserEmailRules::validationError($email, $password, $defaults, $isNew);
         if ($error !== null) {
-            flash('error', $error);
-            $this->redirect('account');
+            return ['ok' => false, 'error' => $error];
         }
 
         $payload = UserEmailRules::buildAccountPayload($email, $password, $displayName, $defaults);
 
         if ($isNew) {
-            $payload['created_by'] = $user['id'];
+            $payload['created_by'] = $userId;
             $accountId = $accountModel->create($payload);
-            $accountModel->setLinkedUsers($accountId, [$user['id']]);
+            $accountModel->setLinkedUsers($accountId, [$userId]);
         } else {
-            // Atualização: buildAccountPayload só inclui smtp_password quando o
-            // usuário digitou uma nova senha; o model mantém a atual se ausente.
+            // buildAccountPayload só inclui smtp_password quando o usuário digitou
+            // uma nova senha; o model mantém a atual se ausente.
             $accountModel->update($existing['id'], $payload);
-            // Garante o vínculo (idempotente) caso tenha se perdido.
-            $accountModel->setLinkedUsers($existing['id'], [$user['id']]);
+            $accountModel->setLinkedUsers($existing['id'], [$userId]); // idempotente
         }
 
-        flash('success', 'E-mail institucional salvo com sucesso!');
-        $this->redirect('account');
+        return ['ok' => true, 'error' => null];
     }
 
     /**

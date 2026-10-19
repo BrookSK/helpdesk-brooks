@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Caixa de Entrada - Prospecção'; $currentPage = 'prospection_inbox'; ?>
+<?php $pageTitle = 'Caixa de Entrada - E-mail'; $currentPage = 'prospection_inbox'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -6,21 +6,27 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
             <h5 class="mb-0 fw-semibold"><i class="bi bi-inbox"></i> Caixa de Entrada</h5>
-            <small class="text-muted">E-mails recebidos nas suas contas de prospecção</small>
+            <small class="text-muted">E-mails recebidos na sua caixa</small>
         </div>
         <div class="d-flex gap-2">
-            <a href="<?= baseUrl('prospection') ?>" class="btn btn-sm btn-primary"><i class="bi bi-send"></i> Novo E-mail</a>
+            <a href="<?= baseUrl('prospection') ?>" class="btn btn-sm btn-primary"><i class="bi bi-send"></i> Enviar E-mail</a>
             <a href="<?= baseUrl('prospection/history') ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock-history"></i> Enviados</a>
         </div>
     </div>
 
     <?php if (empty($accounts)): ?>
     <div class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle"></i> Nenhuma conta com IMAP configurado vinculada ao seu perfil.
-        <?php if ($user['role'] === 'super_admin'): ?>
-        <a href="<?= baseUrl('settings/emailAccounts') ?>">Configurar contas</a>
+        <i class="bi bi-exclamation-triangle"></i>
+        <?php if (!empty($needsEmailSetup)): ?>
+        Conecte seu e-mail para começar a usar a caixa de entrada.
+        <button type="button" class="btn btn-sm btn-primary ms-2" onclick="openEmailSetup()"><i class="bi bi-plug"></i> Conectar e-mail</button>
+        <?php elseif (empty($serverConfigured) && $user['role'] === 'super_admin'): ?>
+        O servidor de e-mail padrão ainda não foi configurado.
+        <a href="<?= baseUrl('settings/emailAccounts') ?>">Configurar servidor padrão</a>
+        <?php elseif (empty($serverConfigured)): ?>
+        O servidor de e-mail padrão ainda não foi configurado. Fale com o administrador.
         <?php else: ?>
-        Peça ao administrador para configurar o IMAP nas contas de e-mail.
+        Nenhuma conta com IMAP configurado vinculada ao seu perfil.
         <?php endif; ?>
     </div>
     <?php else: ?>
@@ -424,5 +430,87 @@ function escapeHtml(text) {
 .email-row:hover .email-row-actions { opacity: 1; }
 @media (hover: none) { .email-row-actions { opacity: 1; } }
 </style>
+
+<!-- Modal: configurar e-mail do usuário (aparece ao abrir a caixa sem conta conectada) -->
+<div class="modal fade" id="emailSetupModal" tabindex="-1" data-bs-backdrop="static" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-envelope-at"></i> Conecte seu e-mail</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="emailSetupForm" onsubmit="return submitEmailSetup(event)">
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">
+                        Para usar a caixa de entrada e enviar e-mails, conecte seu e-mail institucional.
+                        O servidor já está pré-configurado — basta informar seu <strong>e-mail</strong> e sua <strong>senha</strong>.
+                    </p>
+                    <div id="email-setup-error" class="alert alert-danger py-2 small" style="display:none;"></div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-medium">E-mail institucional</label>
+                        <input type="email" name="institutional_email" id="setup-email" class="form-control" placeholder="seu.nome@suaempresa.com.br" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-medium">Nome de exibição (opcional)</label>
+                        <input type="text" name="institutional_display_name" id="setup-display-name" class="form-control" placeholder="Ex: João Silva">
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small fw-medium">Senha do e-mail</label>
+                        <input type="password" name="institutional_password" id="setup-password" class="form-control" placeholder="Senha do seu e-mail" autocomplete="new-password" required>
+                        <small class="text-muted">A senha é criptografada e usada apenas para conectar sua caixa.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Agora não</button>
+                    <button type="submit" class="btn btn-sm btn-primary" id="setup-submit-btn"><i class="bi bi-plug"></i> Conectar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let emailSetupModal = null;
+function getEmailSetupModal() {
+    if (!emailSetupModal) emailSetupModal = new bootstrap.Modal(document.getElementById('emailSetupModal'));
+    return emailSetupModal;
+}
+function openEmailSetup() { getEmailSetupModal().show(); }
+
+function submitEmailSetup(ev) {
+    ev.preventDefault();
+    const btn = document.getElementById('setup-submit-btn');
+    const err = document.getElementById('email-setup-error');
+    err.style.display = 'none';
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Conectando...';
+
+    const fd = new FormData(document.getElementById('emailSetupForm'));
+    fetch('<?= baseUrl("account/saveEmailAjax") ?>', {
+        method: 'POST', body: fd, headers: {'X-Requested-With': 'XMLHttpRequest'}
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d && d.error) {
+            err.textContent = d.error; err.style.display = 'block';
+            btn.disabled = false; btn.innerHTML = orig;
+            return;
+        }
+        // Conectou: recarrega a caixa de entrada já com a conta ativa.
+        location.reload();
+    })
+    .catch(() => {
+        err.textContent = 'Erro ao conectar. Tente novamente.'; err.style.display = 'block';
+        btn.disabled = false; btn.innerHTML = orig;
+    });
+    return false;
+}
+
+<?php if (!empty($needsEmailSetup)): ?>
+// Usuário sem e-mail conectado: abre o pop-up automaticamente ao entrar.
+document.addEventListener('DOMContentLoaded', function() { openEmailSetup(); });
+<?php endif; ?>
+</script>
 
 <?php require APP_PATH . '/views/layouts/footer.php'; ?>

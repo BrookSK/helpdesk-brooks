@@ -23,7 +23,7 @@ class Permissions
     /** Todos os papéis conhecidos do sistema (enum users.role). */
     public const ROLES = [
         'super_admin', 'developer', 'attendant', 'analyst',
-        'comercial', 'marketing', 'whatsapp_agent', 'client',
+        'comercial', 'marketing', 'whatsapp_agent', 'equipe', 'client',
     ];
 
     /**
@@ -109,6 +109,13 @@ class Permissions
             'tickets', 'planning', 'videocall',
             'crm', 'sequences', 'linkedin', 'leadcapture',
         ],
+        // Papel "equipe": acesso enxuto focado em agenda/reuniões e e-mail.
+        // Dashboard, Agenda, Gravações (videocall), Enviar E-mail + Caixa de
+        // Entrada (prospection), Notificações e Minha Conta.
+        'equipe' => [
+            'dashboard', 'account', 'notifications',
+            'agenda', 'videocall', 'prospection',
+        ],
         'client' => [
             'dashboard', 'account', 'notifications', 'whatsapp',
             'client_tickets', 'client_schedule', 'documents', 'subusers',
@@ -168,6 +175,10 @@ class Permissions
         'leadcapture_admin',
         // Administração
         'acessos',                  // Acessos
+        // Área do cliente (alinhada ao rebrand: o painel do cliente fica só com
+        // Dashboard, Notificações e Minha Conta). 'documents' já está acima.
+        'client_tickets',           // Minhas Demandas + Nova Demanda (cliente)
+        'client_schedule',          // Cronograma (cliente)
     ];
 
     /** O módulo está desativado nesta instalação? */

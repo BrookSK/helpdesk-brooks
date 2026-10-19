@@ -79,6 +79,7 @@
                                     <option value="comercial" <?= ($editUser['role'] ?? '') === 'comercial' ? 'selected' : '' ?>>Comercial</option>
                                     <option value="marketing" <?= ($editUser['role'] ?? '') === 'marketing' ? 'selected' : '' ?>>Marketing</option>
                                     <option value="whatsapp_agent" <?= ($editUser['role'] ?? '') === 'whatsapp_agent' ? 'selected' : '' ?>>Agente WhatsApp</option>
+                                    <option value="equipe" <?= ($editUser['role'] ?? '') === 'equipe' ? 'selected' : '' ?>>Equipe</option>
                                     <option value="super_admin" <?= ($editUser['role'] ?? '') === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
                                 </select>
                                 <div id="role-help" class="alert alert-info d-flex align-items-start gap-2 py-2 px-3 mt-2 mb-0" style="font-size:0.82rem">
@@ -382,6 +383,7 @@ const ROLE_DESCRIPTIONS = {
     comercial: 'Comercial: cuida de prospecção e vendas. Tem campos de comissão e créditos próprios.',
     marketing: 'Marketing: cuida de conteúdo e campanhas. Acesso interno, sem vínculo a uma empresa cliente.',
     whatsapp_agent: 'Agente WhatsApp: atende conversas pelo WhatsApp. Acesso às empresas que você liberar.',
+    equipe: 'Equipe: acesso enxuto a Dashboard, Agenda, Gravações, Enviar E-mail e Caixa de Entrada. Configura o próprio e-mail ao abrir a caixa de entrada.',
     super_admin: 'Super Admin: acesso total ao sistema, incluindo o cadastro de usuários. Use com cuidado.'
 };
 

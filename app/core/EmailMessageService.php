@@ -66,7 +66,9 @@ class EmailMessageService
         if (empty($logo)) { try { $logo = (string) Config::get('app_logo'); } catch (\Throwable $e) {} }
         if (!empty($logo)) {
             $logoUrl = (stripos($logo, 'http') === 0) ? $logo : baseUrl($logo);
-            $logoHtml = '<img src="' . $esc($logoUrl) . '" alt="' . $esc($sig['company'] ?? '') . '" style="max-height:56px;margin-bottom:8px;">';
+            // Logo da Brooks é branca (fundo transparente): exibe sobre bloco navy
+            // para ter contraste em e-mails de fundo claro.
+            $logoHtml = '<span style="display:inline-block;background:#1a2332;border-radius:10px;padding:10px 16px;margin-bottom:8px;"><img src="' . $esc($logoUrl) . '" alt="' . $esc($sig['company'] ?? '') . '" style="max-height:48px;display:block;"></span>';
         }
 
         $company = trim((string)($sig['company'] ?? ''));

@@ -152,7 +152,9 @@ class Mailer
             $logoPath = Config::get('app_logo');
             if (!empty($logoPath)) {
                 $logoUrl = baseUrl($logoPath);
-                $logoHtml = "<div style='margin-bottom:10px;'><img src='{$logoUrl}' alt='Logo' style='max-height:56px;max-width:200px;'></div>";
+                // A logo da Brooks é branca (fundo transparente); num e-mail de
+                // fundo branco ela some. Exibimos sobre um bloco navy para contraste.
+                $logoHtml = "<div style='margin-bottom:12px;'><span style='display:inline-block;background:#1a2332;border-radius:12px;padding:14px 22px;'><img src='{$logoUrl}' alt='Logo' style='max-height:48px;max-width:200px;display:block;'></span></div>";
             }
         } catch (\Exception $e) {
             $logoHtml = '';
@@ -172,8 +174,8 @@ class Mailer
                 <div style='text-align:center;margin-bottom:20px;'>
                     {$logoHtml}
                     <div>
-                        <span style='font-family:{$font};color:#4a90d9;font-weight:700;font-size:1.4rem;'>ON</span>
-                        <span style='font-family:{$font};font-weight:600;font-size:1.1rem;color:#000;'> SOLUTIONS</span>
+                        <span style='font-family:{$font};color:#4a90d9;font-weight:700;font-size:1.4rem;'>BROOKS</span>
+                        <span style='font-family:{$font};font-weight:600;font-size:1.1rem;color:#000;'> Construtora</span>
                     </div>
                     <div style='font-family:{$font};font-size:0.8rem;color:#999;margin-top:4px;'>Helpdesk</div>
                 </div>

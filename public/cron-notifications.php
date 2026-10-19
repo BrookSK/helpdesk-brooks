@@ -58,8 +58,8 @@ foreach ($notifications as $n) {
     <body style='font-family:Inter,Arial,sans-serif;background:#f5f7fa;padding:20px;'>
         <div style='max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:30px;box-shadow:0 2px 10px rgba(0,0,0,0.05);'>
             <div style='text-align:center;margin-bottom:20px;'>
-                <span style='color:#4a90d9;font-weight:700;font-size:1.5rem;'>ON</span>
-                <span style='font-weight:300;font-size:1.2rem;'> Solutions</span>
+                <span style='color:#4a90d9;font-weight:700;font-size:1.5rem;'>BROOKS</span>
+                <span style='font-weight:300;font-size:1.2rem;'> Construtora</span>
             </div>
             <h2 style='color:#333;'>{$subject}</h2>
             <p style='color:#666;line-height:1.6;'>" . nl2br(htmlspecialchars($body)) . "</p>

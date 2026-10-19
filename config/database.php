@@ -36,7 +36,7 @@ return (function () {
         return [
             'host'     => '127.0.0.1',
             'port'     => '3306',
-            'database' => 'helpdesk_on_test',
+            'database' => 'helpdesk_brooks_test',
             'username' => 'root',
             'password' => '',
         ];
@@ -74,7 +74,7 @@ return (function () {
         return [
             'host'     => '127.0.0.1',
             'port'     => '3306',
-            'database' => 'helpdesk_on',
+            'database' => 'helpdesk_brooks',
             'username' => 'root',
             'password' => '',
         ];
@@ -85,8 +85,8 @@ return (function () {
         return [
             'host'     => 'localhost',
             'port'     => '3306',
-            'database' => 'helpdesk_on',
-            'username' => 'helpdesk_on',
+            'database' => 'helpdesk_brooks',
+            'username' => 'helpdesk_brooks',
             'password' => 'd3boA94*ar?RnpWq',
         ];
     }
@@ -95,8 +95,8 @@ return (function () {
     return [
         'host'     => 'localhost',
         'port'     => '3306',
-        'database' => 'helpdesk_on_beta',
-        'username' => 'helpdesk_on_beta',
+        'database' => 'helpdesk_brooks_beta',
+        'username' => 'helpdesk_brooks_beta',
         'password' => 'd3boA94*ar?RnpWq',
     ];
 })();

@@ -1,0 +1,682 @@
+<?php $pageTitle = 'Agenda - ON Solutions Helpdesk'; $currentPage = 'agenda'; ?>
+<?php require APP_PATH . '/views/layouts/header.php'; ?>
+<?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
+
+<?php
+$statusMeta = [
+    'a_agendar'  => ['A agendar', '#607d8b'],
+    'agendada'   => ['Agendada', '#1565c0'],
+    'confirmada' => ['Confirmada', '#00897b'],
+    'realizada'  => ['Realizada', '#2e7d32'],
+    'convertida' => ['Convertida', '#6a1b9a'],
+    'remarcada'  => ['Remarcada', '#e65100'],
+    'cancelada'  => ['Cancelada', '#c62828'],
+];
+$urgencyMeta = [
+    'baixa' => ['Baixa', '#607d8b'], 'media' => ['Média', '#1565c0'],
+    'alta' => ['Alta', '#e65100'], 'urgente' => ['Urgente', '#c62828'],
+];
+$tempMeta = ['frio' => ['Frio', '#1565c0'], 'morno' => ['Morno', '#e65100'], 'quente' => ['Quente', '#c62828']];
+
+/*
+ * Separação Agenda principal × Histórico.
+ *
+ * Grace period: um evento só vai para o Histórico 2 horas após meeting_at,
+ * para não sumir da Agenda instantaneamente logo que a reunião começa.
+ * Sem meeting_at → nunca vai para o Histórico (ficam na Agenda).
+ *
+ * Status "concluídos" para efeito de cor no Histórico: realizada, convertida.
+ */
+$gracePeriodSecs = 2 * 3600; // 2 horas
+$now = time();
+
+$groupedActive  = [];   // Agenda principal
+$groupedHistory = [];   // Histórico
+foreach ($statusMeta as $key => $_) {
+    $groupedActive[$key]  = [];
+    $groupedHistory[$key] = [];
+}
+
+foreach ($grouped as $status => $meetings) {
+    foreach ($meetings as $m) {
+        if (!empty($m['meeting_at']) && strtotime($m['meeting_at']) + $gracePeriodSecs < $now) {
+            $groupedHistory[$status][] = $m;
+        } else {
+            $groupedActive[$status][] = $m;
+        }
+    }
+}
+
+$totalHistory = array_sum(array_map('count', $groupedHistory));
+?>
+
+<div class="main-content">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h5 class="mb-0 fw-semibold"><i class="bi bi-calendar2-week"></i> Agenda Comercial</h5>
+            <small class="text-muted">Reuniões vinculadas aos leads do CRM</small>
+        </div>
+        <div class="d-flex gap-2">
+            <div class="btn-group btn-group-sm" id="view-toggle">
+                <button type="button" class="btn btn-outline-primary" data-view="kanban"><i class="bi bi-kanban"></i> Kanban</button>
+                <button type="button" class="btn btn-outline-primary active" data-view="calendar"><i class="bi bi-calendar3"></i> Calendário</button>
+            </div>
+            <button class="btn btn-outline-success btn-sm" onclick="openQuickRoom()"><i class="bi bi-camera-reels"></i> Sala rápida</button>
+            <button class="btn btn-primary btn-sm" onclick="openMeetingModal()"><i class="bi bi-plus-lg"></i> Nova reunião</button>
+        </div>
+    </div>
+
+    <!-- ABAS: Agenda principal × Histórico -->
+    <div class="d-flex align-items-center gap-3 mb-3 border-bottom pb-2">
+        <button type="button" class="btn btn-sm px-3 fw-semibold agenda-tab-btn active" data-tab="agenda"
+                style="border:none;border-bottom:3px solid var(--primary,#00BFA6);border-radius:0;background:transparent;color:var(--primary,#00BFA6);">
+            <i class="bi bi-calendar2-check"></i> Agenda
+        </button>
+        <button type="button" class="btn btn-sm px-3 fw-semibold agenda-tab-btn" data-tab="history"
+                style="border:none;border-bottom:3px solid transparent;border-radius:0;background:transparent;color:#888;">
+            <i class="bi bi-clock-history"></i> Histórico
+            <?php if ($totalHistory > 0): ?>
+            <span class="badge rounded-pill ms-1" style="background:#888;font-size:.65rem;"><?= $totalHistory ?></span>
+            <?php endif; ?>
+        </button>
+    </div>
+
+    <!-- LEGENDA DE CORES (visível quando a aba Histórico ou o Calendário estiver ativo) -->
+    <div id="color-legend" class="mb-3" style="display:none;">
+        <div class="d-flex flex-wrap gap-2 align-items-center p-2 rounded" style="background:#f8f9fa;font-size:.72rem;">
+            <strong class="me-1">Legenda:</strong>
+            <span class="d-flex align-items-center gap-1">
+                <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#e7effd;border-left:3px solid #2563eb;"></span>
+                <span style="color:#1e3a8a;">Dentro do prazo</span>
+            </span>
+            <span class="d-flex align-items-center gap-1">
+                <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fef7d6;border-left:3px solid #f59e0b;"></span>
+                <span style="color:#7a5900;">Próximo do vencimento (&lt; 24h)</span>
+            </span>
+            <span class="d-flex align-items-center gap-1">
+                <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fde8e8;border-left:3px solid #dc2626;"></span>
+                <span style="color:#991b1b;">No dia / vencido (não concluído)</span>
+            </span>
+            <span class="d-flex align-items-center gap-1">
+                <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:rgba(129,199,132,0.35);border-left:3px solid rgba(76,175,80,0.7);"></span>
+                <span style="color:#2e5b31;">Concluído (realizada / convertida)</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- CONTEÚDO DA ABA AGENDA -->
+    <div id="tab-agenda">
+
+    <!-- KANBAN -->
+    <div id="kanban-view" style="display:none;">
+        <div class="agenda-kanban">
+            <?php foreach ($statusMeta as $key => $meta): ?>
+            <div class="agenda-col" data-status="<?= $key ?>">
+                <div class="agenda-col-head" style="border-top:3px solid <?= $meta[1] ?>">
+                    <span class="agenda-col-title"><?= $meta[0] ?></span>
+                    <span class="agenda-col-count"><?= count($groupedActive[$key] ?? []) ?></span>
+                </div>
+                <div class="agenda-col-body" data-status="<?= $key ?>">
+                    <?php foreach (($groupedActive[$key] ?? []) as $m): ?>
+                    <?php require APP_PATH . '/views/agenda/_card.php'; ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- CALENDÁRIO -->
+    <div id="calendar-view">
+        <div class="card">
+            <div class="card-body p-2 p-md-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" id="cal-prev"><i class="bi bi-chevron-left"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" id="cal-today">Hoje</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="cal-next"><i class="bi bi-chevron-right"></i></button>
+                        <h6 class="mb-0 ms-2 fw-semibold" id="cal-title" style="min-width:170px;"></h6>
+                    </div>
+                    <div class="btn-group btn-group-sm" id="cal-mode-toggle">
+                        <button type="button" class="btn btn-outline-primary active" data-mode="month">Mês</button>
+                        <button type="button" class="btn btn-outline-primary" data-mode="week">Semana</button>
+                    </div>
+                </div>
+                <div id="calendar-container"></div>
+            </div>
+        </div>
+    </div>
+
+    </div><!-- /#tab-agenda -->
+
+    <!-- CONTEÚDO DA ABA HISTÓRICO -->
+    <div id="tab-history" style="display:none;">
+
+        <?php if ($totalHistory === 0): ?>
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-clock-history" style="font-size:2.5rem;opacity:.3;"></i>
+            <p class="mt-2 mb-0 small">Nenhum evento no histórico ainda.</p>
+            <p class="text-muted" style="font-size:.75rem;">Eventos aparecem aqui 2 horas após o horário agendado.</p>
+        </div>
+        <?php else: ?>
+
+        <?php
+        /*
+         * Função auxiliar PHP para calcular a cor de um evento no Histórico.
+         * Regras:
+         *   - Passado concluído (realizada/convertida) → verde claro 50% de opacidade
+         *   - Passado não concluído                    → vermelho
+         * (As regras de azul/amarelo/vermelho para eventos futuros são usadas apenas
+         *  no calendário; no Histórico todos os eventos já passaram o grace period.)
+         */
+        function historyCardBg(array $m): string {
+            $concluded = in_array($m['status'], ['realizada', 'convertida'], true);
+            return $concluded ? 'rgba(76,175,80,0.15)' : 'rgba(198,40,40,0.07)';
+        }
+        function historyCardBorder(array $m): string {
+            $concluded = in_array($m['status'], ['realizada', 'convertida'], true);
+            return $concluded ? '3px solid rgba(76,175,80,0.5)' : '3px solid #c62828';
+        }
+        ?>
+
+        <div class="agenda-kanban">
+            <?php foreach ($statusMeta as $key => $meta): ?>
+            <?php if (empty($groupedHistory[$key])): continue; endif; ?>
+            <div class="agenda-col" data-status="<?= $key ?>">
+                <div class="agenda-col-head" style="border-top:3px solid <?= $meta[1] ?>">
+                    <span class="agenda-col-title"><?= $meta[0] ?></span>
+                    <span class="agenda-col-count"><?= count($groupedHistory[$key]) ?></span>
+                </div>
+                <div class="agenda-col-body" data-status="<?= $key ?>">
+                    <?php foreach ($groupedHistory[$key] as $m): ?>
+                    <?php
+                    $um = $urgencyMeta[$m['urgency']] ?? ['—', '#888'];
+                    $tm = !empty($m['temperature']) ? ($tempMeta[$m['temperature']] ?? null) : null;
+                    $clientName = $m['crm_contact_name'] ?? $m['client_name'] ?? null;
+                    $when = !empty($m['meeting_at']) ? date('d/m H:i', strtotime($m['meeting_at'])) : 'Sem data';
+                    $histBg     = historyCardBg($m);
+                    $histBorder = historyCardBorder($m);
+                    $isConcluded = in_array($m['status'], ['realizada', 'convertida'], true);
+                    ?>
+                    <div class="agenda-card"
+                         style="background:<?= $histBg ?>;border-left:<?= $histBorder ?>;<?= $isConcluded ? 'opacity:.85;' : '' ?>"
+                         onclick="openMeetingModal(<?= $m['id'] ?>)">
+                        <h6 class="fw-semibold mb-1"><?= escape($m['title']) ?></h6>
+                        <?php if ($clientName): ?><div class="small text-muted"><i class="bi bi-person"></i> <?= escape($clientName) ?></div><?php endif; ?>
+                        <div class="ac-meta">
+                            <span><i class="bi bi-calendar-event"></i> <?= escape($when) ?></span>
+                            <?php if (!empty($m['assigned_name'])): ?>
+                            <span><i class="bi bi-person-badge"></i> <?= escape($m['assigned_name']) ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="mt-2 d-flex flex-wrap gap-1">
+                            <span class="agenda-badge" style="background:<?= ($statusMeta[$m['status']] ?? ['', '#888'])[1] ?>"><?= ($statusMeta[$m['status']] ?? ['—', ''])[0] ?></span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <?php endif; ?>
+    </div><!-- /#tab-history -->
+
+</div><!-- /.main-content -->
+
+<?php require APP_PATH . '/views/agenda/_modal.php'; ?>
+
+<!-- Modal: Sala rápida (cria uma videochamada sem precisar agendar) -->
+<div class="modal fade" id="quickRoomModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-camera-reels"></i> Sala de vídeo rápida</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Passo 1: formulário -->
+                <div id="qr-form">
+                    <p class="text-muted small">Gera um link de videochamada em grupo na hora, sem precisar agendar. Compartilhe o link com quem quiser (ou com o Fathom para gravar).</p>
+                    <div class="mb-2">
+                        <label class="form-label small fw-medium">Nome da sala (opcional)</label>
+                        <input type="text" id="qr-title" class="form-control form-control-sm" placeholder="Ex.: Reunião rápida com o cliente" maxlength="120">
+                        <small class="text-muted">Entram quantas pessoas forem chegando pelo link — você, o cliente, o Fathom, o que precisar.</small>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small fw-medium">Tipo de sala</label>
+                        <div class="d-flex gap-2">
+                            <label class="flex-fill border rounded p-2 small mb-0" style="cursor:pointer;">
+                                <input type="radio" name="qr-visibility" value="public" checked onchange="onQrVisibilityChange()"> <i class="bi bi-globe"></i> Pública
+                                <div class="text-muted" style="font-size:.72rem;">Qualquer pessoa com o link entra direto.</div>
+                            </label>
+                            <label class="flex-fill border rounded p-2 small mb-0" style="cursor:pointer;">
+                                <input type="radio" name="qr-visibility" value="private" onchange="onQrVisibilityChange()"> <i class="bi bi-shield-lock"></i> Privada
+                                <div class="text-muted" style="font-size:.72rem;">Entrada aprovada por um administrador.</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="qr-auto-record" checked>
+                        <label class="form-check-label small" for="qr-auto-record">
+                            <i class="bi bi-record-circle text-danger"></i> Gravar a reunião automaticamente
+                            <div class="text-muted" style="font-size:.72rem;">Começa a gravar sozinho quando o primeiro participante entra. Depois geramos transcrição, resumo e minuta.</div>
+                        </label>
+                    </div>
+
+                    <div class="mb-2" id="qr-admins-block" style="display:none;">
+                        <label class="form-label small fw-medium">Administradores da sala</label>
+                        <select id="qr-admins" class="form-select form-select-sm" multiple size="4">
+                            <?php foreach (($team ?? []) as $tm): ?>
+                            <option value="<?= (int)$tm['id'] ?>"><?= escape($tm['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">Você já é admin. Segure Ctrl/Cmd para escolher mais de um. Eles aprovam quem pede para entrar.</small>
+                    </div>
+                </div>
+                <!-- Passo 2: link gerado -->
+                <div id="qr-result" style="display:none;">
+                    <div class="text-center mb-3">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size:2.4rem;"></i>
+                        <h6 class="mt-2 mb-0">Sala criada!</h6>
+                        <small class="text-muted">Copie o link e envie para os participantes.</small>
+                    </div>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" id="qr-link" class="form-control" readonly>
+                        <button class="btn btn-outline-secondary" onclick="copyQuickLink()"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div id="qr-actions-form">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-sm btn-success" id="qr-create-btn" onclick="createQuickRoom()"><i class="bi bi-camera-video"></i> Criar e gerar link</button>
+                </div>
+                <div id="qr-actions-result" style="display:none;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetQuickRoom()"><i class="bi bi-arrow-left"></i> Criar outra</button>
+                    <a href="#" id="qr-enter" target="_blank" class="btn btn-sm btn-primary"><i class="bi bi-box-arrow-in-right"></i> Entrar agora</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const QR_BASE = '<?= baseUrl("") ?>';
+let quickRoomModalInstance = null;
+function getQuickRoomModal() {
+    if (!quickRoomModalInstance) quickRoomModalInstance = new bootstrap.Modal(document.getElementById('quickRoomModal'));
+    return quickRoomModalInstance;
+}
+function openQuickRoom() { resetQuickRoom(); getQuickRoomModal().show(); }
+function resetQuickRoom() {
+    document.getElementById('qr-title').value = '';
+    const pub = document.querySelector('input[name="qr-visibility"][value="public"]');
+    if (pub) pub.checked = true;
+    const ar = document.getElementById('qr-auto-record'); if (ar) ar.checked = true;
+    Array.from(document.getElementById('qr-admins').options).forEach(o => o.selected = false);
+    onQrVisibilityChange();
+    document.getElementById('qr-form').style.display = '';
+    document.getElementById('qr-result').style.display = 'none';
+    document.getElementById('qr-actions-form').style.display = '';
+    document.getElementById('qr-actions-result').style.display = 'none';
+}
+function onQrVisibilityChange() {
+    const v = document.querySelector('input[name="qr-visibility"]:checked')?.value || 'public';
+    document.getElementById('qr-admins-block').style.display = (v === 'private') ? '' : 'none';
+}
+function createQuickRoom() {
+    const btn = document.getElementById('qr-create-btn');
+    const original = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Criando...';
+
+    const fd = new FormData();
+    fd.append('title', document.getElementById('qr-title').value.trim() || 'Sala rápida');
+    const visibility = document.querySelector('input[name="qr-visibility"]:checked')?.value || 'public';
+    fd.append('visibility', visibility);
+    fd.append('auto_record', document.getElementById('qr-auto-record')?.checked ? '1' : '0');
+    if (visibility === 'private') {
+        Array.from(document.getElementById('qr-admins').selectedOptions).forEach(o => fd.append('admins[]', o.value));
+    }
+
+    fetch(`${QR_BASE}videocall/create`, { method: 'POST', body: fd, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(r => r.json()).then(d => {
+            btn.disabled = false; btn.innerHTML = original;
+            if (d.error) { alert(d.error); return; }
+            document.getElementById('qr-link').value = d.url || '';
+            document.getElementById('qr-enter').href = d.url || '#';
+            document.getElementById('qr-form').style.display = 'none';
+            document.getElementById('qr-result').style.display = '';
+            document.getElementById('qr-actions-form').style.display = 'none';
+            document.getElementById('qr-actions-result').style.display = '';
+        })
+        .catch(() => { btn.disabled = false; btn.innerHTML = original; alert('Erro ao criar a sala.'); });
+}
+function copyQuickLink() {
+    const el = document.getElementById('qr-link');
+    el.select();
+    navigator.clipboard?.writeText(el.value).then(() => {
+        const btn = event.currentTarget;
+        const old = btn.innerHTML; btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+        setTimeout(() => btn.innerHTML = old, 1500);
+    }).catch(() => document.execCommand('copy'));
+}
+</script>
+
+<style>
+.agenda-kanban { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
+.agenda-col { flex: 1 1 0; min-width: 250px; background: #f4f6f8; border-radius: 12px; display: flex; flex-direction: column; }
+.agenda-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #fff; border-radius: 12px 12px 0 0; }
+.agenda-col-title { font-size: 0.78rem; font-weight: 700; color: #445; text-transform: uppercase; letter-spacing: .3px; }
+.agenda-col-count { font-size: 0.66rem; font-weight: 600; background: #eef0f2; color: #667; border-radius: 20px; padding: 1px 8px; }
+.agenda-col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 60px; }
+.agenda-card { background: #fff; border: 1px solid #eef0f2; border-radius: 10px; padding: 10px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: box-shadow .15s; }
+.agenda-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.agenda-card.dragging { opacity: 0.5; }
+.agenda-card-op { border-left: 3px solid #455a64; }
+.agenda-col-body.drag-over { background: #e3f2fd; outline: 2px dashed #90caf9; outline-offset: -4px; border-radius: 8px; }
+.agenda-col-body.drag-blocked { background: #ffebee; outline: 2px dashed #ef9a9a; outline-offset: -4px; border-radius: 8px; }
+.agenda-card h6 { font-size: 0.85rem; margin-bottom: 4px; }
+.agenda-card .ac-meta { font-size: 0.7rem; color: #888; display: flex; flex-wrap: wrap; gap: 3px 8px; margin-top: 4px; }
+.agenda-badge { font-size: 0.62rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; color: #fff; display: inline-block; }
+/* Calendário */
+.cal-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.cal-grid th { background: #f8f9fa; text-align: center; font-weight: 600; font-size: 0.72rem; padding: 6px 4px; border: 1px solid #eef0f2; color: #667; text-transform: uppercase; }
+.cal-grid td { border: 1px solid #eef0f2; vertical-align: top; height: 110px; padding: 4px; position: relative; }
+.cal-grid td.other-month { background: #fafbfc; }
+.cal-grid td.today { background: #eef7ff; }
+.cal-daynum { font-size: 0.72rem; font-weight: 600; color: #556; }
+.cal-cell-add { position: absolute; top: 3px; right: 4px; opacity: 0; font-size: 0.7rem; color: var(--primary); cursor: pointer; }
+.cal-grid td:hover .cal-cell-add { opacity: 1; }
+.cal-event { font-size: 0.68rem; padding: 2px 6px 2px 7px; border-radius: 4px; margin-bottom: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.cal-week td { height: 300px; }
+</style>
+
+<script>
+const BASE = '<?= baseUrl("") ?>';
+const STATUS_META = <?= json_encode($statusMeta) ?>;
+let calDate = new Date();
+let calMode = 'month';
+let calEvents = [];
+
+// ===== Alternância de visão (Kanban / Calendário) =====
+document.querySelectorAll('#view-toggle button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#view-toggle button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        const view = this.dataset.view;
+        document.getElementById('kanban-view').style.display = view === 'kanban' ? '' : 'none';
+        document.getElementById('calendar-view').style.display = view === 'calendar' ? '' : 'none';
+        if (view === 'calendar') loadCalendar();
+        updateLegendVisibility();
+    });
+});
+
+// ===== Alternância de abas (Agenda / Histórico) =====
+document.querySelectorAll('.agenda-tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const tab = this.dataset.tab;
+        // Estado visual dos botões
+        document.querySelectorAll('.agenda-tab-btn').forEach(b => {
+            b.style.borderBottom = '3px solid transparent';
+            b.style.color = '#888';
+        });
+        this.style.borderBottom = '3px solid var(--primary, #00BFA6)';
+        this.style.color = 'var(--primary, #00BFA6)';
+        // Conteúdo
+        document.getElementById('tab-agenda').style.display   = tab === 'agenda'   ? '' : 'none';
+        document.getElementById('tab-history').style.display  = tab === 'history'  ? '' : 'none';
+        // Controles de visão (Kanban/Calendário) só fazem sentido na aba Agenda
+        document.getElementById('view-toggle').style.display  = tab === 'agenda'   ? '' : 'none';
+        updateLegendVisibility();
+    });
+});
+
+function updateLegendVisibility() {
+    // Legenda aparece na aba Histórico ou quando a visão Calendário está ativa
+    const isHistoryTab = document.getElementById('tab-history').style.display !== 'none';
+    const isCalendarView = document.getElementById('calendar-view').style.display !== 'none';
+    document.getElementById('color-legend').style.display = (isHistoryTab || isCalendarView) ? '' : 'none';
+}
+
+// Carrega o calendário automaticamente ao abrir a página (visão padrão = calendário)
+document.addEventListener('DOMContentLoaded', function() {
+    loadCalendar();
+    updateLegendVisibility();
+});
+
+// ===== Calendário =====
+document.getElementById('cal-prev').addEventListener('click', () => navCal(-1));
+document.getElementById('cal-next').addEventListener('click', () => navCal(1));
+document.getElementById('cal-today').addEventListener('click', () => { calDate = new Date(); loadCalendar(); });
+document.querySelectorAll('#cal-mode-toggle button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#cal-mode-toggle button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        calMode = this.dataset.mode;
+        loadCalendar();
+    });
+});
+function navCal(dir) {
+    if (calMode === 'month') calDate.setMonth(calDate.getMonth() + dir);
+    else calDate.setDate(calDate.getDate() + 7 * dir);
+    loadCalendar();
+}
+function fmtDate(d) { return d.toISOString().slice(0, 10); }
+
+function loadCalendar() {
+    let start, end;
+    if (calMode === 'month') {
+        start = new Date(calDate.getFullYear(), calDate.getMonth(), 1);
+        end = new Date(calDate.getFullYear(), calDate.getMonth() + 1, 0);
+    } else {
+        start = new Date(calDate); start.setDate(start.getDate() - start.getDay());
+        end = new Date(start); end.setDate(end.getDate() + 6);
+    }
+    const qs = new Date(start); qs.setDate(qs.getDate() - 7);
+    const qe = new Date(end); qe.setDate(qe.getDate() + 7);
+    fetch(`${BASE}agenda/calendar?start=${fmtDate(qs)}&end=${fmtDate(qe)}`)
+        .then(r => r.json()).then(d => { calEvents = d.events || []; renderCalendar(start, end); });
+}
+
+const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const WEEKDAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function eventsForDay(dayStr) { return calEvents.filter(e => (e.meeting_at || '').slice(0, 10) === dayStr); }
+
+function renderCalendar(start, end) {
+    const container = document.getElementById('calendar-container');
+    const title = document.getElementById('cal-title');
+    const todayStr = fmtDate(new Date());
+    if (calMode === 'month') {
+        title.textContent = MONTHS[calDate.getMonth()] + ' ' + calDate.getFullYear();
+        const first = new Date(calDate.getFullYear(), calDate.getMonth(), 1);
+        const gridStart = new Date(first); gridStart.setDate(gridStart.getDate() - first.getDay());
+        let html = '<table class="cal-grid"><thead><tr>' + WEEKDAYS.map(d => `<th>${d}</th>`).join('') + '</tr></thead><tbody>';
+        let cur = new Date(gridStart);
+        for (let w = 0; w < 6; w++) {
+            html += '<tr>';
+            for (let d = 0; d < 7; d++) {
+                const dayStr = fmtDate(cur);
+                const isOther = cur.getMonth() !== calDate.getMonth();
+                html += `<td class="${isOther ? 'other-month' : ''} ${dayStr === todayStr ? 'today' : ''}">
+                    <span class="cal-daynum">${cur.getDate()}</span>
+                    <i class="bi bi-plus-circle-fill cal-cell-add" onclick="openMeetingModal(null,'${dayStr}')"></i>
+                    <div>${dayContent(dayStr)}</div></td>`;
+                cur.setDate(cur.getDate() + 1);
+            }
+            html += '</tr>';
+            if (cur > end && cur.getDay() === 0) break;
+        }
+        container.innerHTML = html + '</tbody></table>';
+    } else {
+        const ws = new Date(calDate); ws.setDate(ws.getDate() - ws.getDay());
+        const we = new Date(ws); we.setDate(we.getDate() + 6);
+        title.textContent = `${ws.getDate()} ${MONTHS[ws.getMonth()].slice(0,3)} - ${we.getDate()} ${MONTHS[we.getMonth()].slice(0,3)}`;
+        let html = '<table class="cal-grid cal-week"><thead><tr>';
+        let cur = new Date(ws);
+        for (let d = 0; d < 7; d++) { html += `<th>${WEEKDAYS[d]} ${cur.getDate()}</th>`; cur.setDate(cur.getDate() + 1); }
+        html += '</tr></thead><tbody><tr>';
+        cur = new Date(ws);
+        for (let d = 0; d < 7; d++) {
+            const dayStr = fmtDate(cur);
+            html += `<td class="${dayStr === todayStr ? 'today' : ''}">
+                <i class="bi bi-plus-circle-fill cal-cell-add" onclick="openMeetingModal(null,'${dayStr}')"></i>
+                <div>${dayContent(dayStr)}</div></td>`;
+            cur.setDate(cur.getDate() + 1);
+        }
+        container.innerHTML = html + '</tr></tbody></table>';
+    }
+}
+function dayContent(dayStr) {
+    return eventsForDay(dayStr).map(e => {
+        const cat = calEventCat(e);
+        const time = (e.meeting_at || '').slice(11, 16);
+        return `<div class="cal-event" style="background:${cat.bg};border-left:3px solid ${cat.border};color:${cat.text};" onclick="event.stopPropagation();openMeetingModal(${e.id})" title="${escapeAttr(e.title)}">${time ? time + ' ' : ''}${escapeHtml(e.title)}</div>`;
+    }).join('');
+}
+
+/**
+ * Categoria de cor de um evento no calendário (mesmo padrão visual do Planejamento):
+ * fundo claro + borda esquerda forte + texto escuro.
+ *
+ *   - Passado concluído (realizada/convertida) → verde claro
+ *   - Passado não concluído (> grace 2h)       → vermelho claro
+ *   - No dia / dentro do grace de 2h           → vermelho claro
+ *   - Próximo do vencimento (< 24h)            → amarelo claro
+ *   - Futuro (> 24h)                           → azul claro
+ *   - Sem data                                 → cinza (fallback)
+ */
+const CAL_CATS = {
+    on_track: { bg: '#e7effd', border: '#2563eb', text: '#1e3a8a' },
+    near_due: { bg: '#fef7d6', border: '#f59e0b', text: '#7a5900' },
+    overdue:  { bg: '#fde8e8', border: '#dc2626', text: '#991b1b' },
+    done:     { bg: 'rgba(129,199,132,0.35)', border: 'rgba(76,175,80,0.7)', text: '#2e5b31' },
+    none:     { bg: '#f0f0f0', border: '#aaa',    text: '#555' },
+};
+function calEventCat(e) {
+    const GRACE_MS = 2 * 3600 * 1000;
+    const NEAR_MS  = 24 * 3600 * 1000;
+    const concluded = ['realizada', 'convertida'].includes(e.status);
+
+    if (!e.meeting_at) return CAL_CATS.none;
+
+    const meetingTs = new Date(e.meeting_at.replace(' ', 'T')).getTime();
+    const nowTs     = Date.now();
+    const diffMs    = meetingTs - nowTs; // positivo = futuro
+
+    if (diffMs + GRACE_MS < 0) {
+        // Passou o grace period
+        return concluded ? CAL_CATS.done : CAL_CATS.overdue;
+    }
+    if (diffMs < 0) {
+        // Dentro do grace (passou mas ainda na Agenda)
+        return CAL_CATS.overdue;
+    }
+    if (diffMs <= NEAR_MS) return CAL_CATS.near_due;
+    return CAL_CATS.on_track;
+}
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escapeAttr(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+// ===== Drag & Drop no Kanban =====
+// Reuniões operacionais só podem ir para estes status (sem convertida/remarcada).
+const OP_ALLOWED_STATUS = ['a_agendar', 'agendada', 'confirmada', 'realizada', 'cancelada'];
+let draggedCard = null;
+
+// Verifica se um card pode ser solto em uma coluna de destino.
+function canDrop(card, targetStatus) {
+    if (!card) return false;
+    const type = card.dataset.type;
+    // "convertida" nunca via arrasto (exige informar quem fechou pelo modal).
+    if (targetStatus === 'convertida') return false;
+    if (type === 'operacional' && !OP_ALLOWED_STATUS.includes(targetStatus)) return false;
+    return true;
+}
+
+function initKanbanDnD() {
+    // Cards arrastáveis
+    document.querySelectorAll('.agenda-card[draggable="true"]').forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+            draggedCard = card;
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', card.dataset.id); } catch (_) {}
+        });
+        card.addEventListener('dragend', () => {
+            card.classList.remove('dragging');
+            draggedCard = null;
+            document.querySelectorAll('.agenda-col-body').forEach(b => b.classList.remove('drag-over', 'drag-blocked'));
+        });
+    });
+
+    // Colunas como alvos de drop
+    document.querySelectorAll('.agenda-col-body').forEach(body => {
+        const targetStatus = body.dataset.status;
+
+        body.addEventListener('dragover', (e) => {
+            if (!draggedCard) return;
+            e.preventDefault();
+            if (canDrop(draggedCard, targetStatus)) {
+                e.dataTransfer.dropEffect = 'move';
+                body.classList.add('drag-over');
+                body.classList.remove('drag-blocked');
+            } else {
+                e.dataTransfer.dropEffect = 'none';
+                body.classList.add('drag-blocked');
+                body.classList.remove('drag-over');
+            }
+        });
+        body.addEventListener('dragleave', () => {
+            body.classList.remove('drag-over', 'drag-blocked');
+        });
+        body.addEventListener('drop', (e) => {
+            e.preventDefault();
+            body.classList.remove('drag-over', 'drag-blocked');
+            if (!draggedCard) return;
+
+            const card = draggedCard;
+            const id = card.dataset.id;
+            const sourceStatus = card.closest('.agenda-col-body')?.dataset.status;
+            if (sourceStatus === targetStatus) return; // mesma coluna, nada a fazer
+
+            if (!canDrop(card, targetStatus)) {
+                if (targetStatus === 'convertida') {
+                    alert('Para marcar como convertida, abra a reunião e informe quem fechou o negócio.');
+                } else {
+                    alert('Este status não é permitido para reuniões operacionais.');
+                }
+                return;
+            }
+
+            // Move o card na tela de forma otimista
+            body.appendChild(card);
+            updateColumnCounts();
+
+            const fd = new FormData();
+            fd.append('status', targetStatus);
+            fetch(`${BASE}agenda/updateStatus/${id}`, { method: 'POST', body: fd, headers: {'X-Requested-With':'XMLHttpRequest'} })
+                .then(r => r.json()).then(d => {
+                    if (d.error) { alert(d.error); location.reload(); }
+                })
+                .catch(() => { alert('Erro ao mover a reunião.'); location.reload(); });
+        });
+    });
+}
+
+// Atualiza os contadores no topo de cada coluna.
+function updateColumnCounts() {
+    document.querySelectorAll('.agenda-col').forEach(col => {
+        const status = col.dataset.status;
+        const count = col.querySelectorAll('.agenda-col-body .agenda-card').length;
+        const badge = col.querySelector('.agenda-col-count');
+        if (badge) badge.textContent = count;
+    });
+}
+
+initKanbanDnD();
+</script>
+
+<?php require APP_PATH . '/views/layouts/footer.php'; ?>

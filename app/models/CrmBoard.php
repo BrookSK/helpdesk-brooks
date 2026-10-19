@@ -1,0 +1,592 @@
+<?php
+
+class CrmBoard
+{
+    private $db;
+
+    public function __construct()
+    {
+        $this->db = Database::getInstance();
+    }
+
+    // =========================================
+    // BOARDS
+    // =========================================
+
+    public function findById($id)
+    {
+        return $this->db->fetch("SELECT * FROM crm_boards WHERE id = ?", [$id]);
+    }
+
+    /**
+     * Lista os boards ativos. Boards com visibility='admin' só aparecem para
+     * super_admin (usado pela Prospecção Automática).
+     * @param string|null $role papel do usuário atual (para filtrar visibilidade)
+     */
+    public function getAll($role = null)
+    {
+        // Detecta se a coluna visibility existe (migration pode não ter rodado ainda)
+        $hasVisibility = false;
+        try {
+            $col = $this->db->fetch(
+                "SELECT COUNT(*) c FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'crm_boards' AND COLUMN_NAME = 'visibility'"
+            );
+            $hasVisibility = ((int)($col['c'] ?? 0) > 0);
+        } catch (\Throwable $e) { $hasVisibility = false; }
+
+        $where = "b.is_active = 1";
+        if ($hasVisibility && $role !== 'super_admin') {
+            $where .= " AND (b.visibility IS NULL OR b.visibility <> 'admin')";
+        }
+
+        return $this->db->fetchAll(
+            "SELECT b.*, u.name as created_by_name,
+                    (SELECT COUNT(*) FROM crm_cards c 
+                     JOIN crm_columns col ON c.column_id = col.id 
+                     WHERE col.board_id = b.id) as total_cards
+             FROM crm_boards b
+             LEFT JOIN users u ON b.created_by = u.id
+             WHERE {$where}
+             ORDER BY b.created_at DESC"
+        );
+    }
+
+    public function create($data)
+    {
+        return $this->db->insert('crm_boards', $data);
+    }
+
+    public function update($id, $data)
+    {
+        return $this->db->update('crm_boards', $data, 'id = ?', [$id]);
+    }
+
+    /**
+     * Exclui o board e TODO o seu conteúdo (colunas, cards e atividades).
+     * Faz a limpeza explícita em ordem para funcionar mesmo que as FKs
+     * com ON DELETE CASCADE não estejam habilitadas no banco.
+     */
+    public function delete($id)
+    {
+        // IDs das colunas do board
+        $columns = $this->db->fetchAll("SELECT id FROM crm_columns WHERE board_id = ?", [$id]);
+        $columnIds = array_column($columns, 'id');
+
+        if (!empty($columnIds)) {
+            $placeholders = implode(',', array_fill(0, count($columnIds), '?'));
+
+            // IDs dos cards dessas colunas
+            $cards = $this->db->fetchAll(
+                "SELECT id FROM crm_cards WHERE column_id IN ($placeholders)",
+                $columnIds
+            );
+            $cardIds = array_column($cards, 'id');
+
+            // Atividades dos cards
+            if (!empty($cardIds)) {
+                $cardPlaceholders = implode(',', array_fill(0, count($cardIds), '?'));
+                $this->db->query(
+                    "DELETE FROM crm_card_activities WHERE card_id IN ($cardPlaceholders)",
+                    $cardIds
+                );
+            }
+
+            // Cards das colunas
+            $this->db->query(
+                "DELETE FROM crm_cards WHERE column_id IN ($placeholders)",
+                $columnIds
+            );
+
+            // Colunas do board
+            $this->db->delete('crm_columns', 'board_id = ?', [$id]);
+        }
+
+        // Por fim, o board
+        return $this->db->delete('crm_boards', 'id = ?', [$id]);
+    }
+
+    // =========================================
+    // COLUNAS
+    // =========================================
+
+    public function getColumns($boardId)
+    {
+        return $this->db->fetchAll(
+            "SELECT * FROM crm_columns WHERE board_id = ? ORDER BY position ASC",
+            [$boardId]
+        );
+    }
+
+    public function findColumn($id)
+    {
+        return $this->db->fetch("SELECT * FROM crm_columns WHERE id = ?", [$id]);
+    }
+
+    public function createColumn($data)
+    {
+        // Pegar próxima posição
+        $last = $this->db->fetch(
+            "SELECT MAX(position) as max_pos FROM crm_columns WHERE board_id = ?",
+            [$data['board_id']]
+        );
+        $data['position'] = ($last['max_pos'] ?? -1) + 1;
+
+        return $this->db->insert('crm_columns', $data);
+    }
+
+    public function updateColumn($id, $data)
+    {
+        return $this->db->update('crm_columns', $data, 'id = ?', [$id]);
+    }
+
+    public function deleteColumn($id)
+    {
+        return $this->db->delete('crm_columns', 'id = ?', [$id]);
+    }
+
+    public function reorderColumns($boardId, $columnIds)
+    {
+        foreach ($columnIds as $position => $columnId) {
+            $this->db->update('crm_columns', ['position' => $position], 'id = ? AND board_id = ?', [$columnId, $boardId]);
+        }
+    }
+
+    // =========================================
+    // CARDS
+    // =========================================
+
+    public function getCards($columnId)
+    {
+        return $this->db->fetchAll(
+            "SELECT c.*, u.name as assigned_name, wc.contact_name, wc.phone as contact_phone,
+                    cb.investment_range, cb.lead_temperature,
+                    l.name as label_name, l.color as label_color
+             FROM crm_cards c
+             LEFT JOIN users u ON c.assigned_to = u.id
+             LEFT JOIN whatsapp_contacts wc ON c.contact_id = wc.id
+             LEFT JOIN commercial_briefings cb ON cb.contact_id = c.contact_id
+             LEFT JOIN whatsapp_labels l ON c.label_id = l.id
+             WHERE c.column_id = ?
+             ORDER BY c.position ASC",
+            [$columnId]
+        );
+    }
+
+    public function getCardsByBoard($boardId)
+    {
+        return $this->db->fetchAll(
+            "SELECT c.*, col.name as column_name, col.color as column_color,
+                    u.name as assigned_name, wc.contact_name, wc.phone as contact_phone
+             FROM crm_cards c
+             JOIN crm_columns col ON c.column_id = col.id
+             LEFT JOIN users u ON c.assigned_to = u.id
+             LEFT JOIN whatsapp_contacts wc ON c.contact_id = wc.id
+             WHERE col.board_id = ?
+             ORDER BY col.position ASC, c.position ASC",
+            [$boardId]
+        );
+    }
+
+    public function findCard($id)
+    {
+        return $this->db->fetch(
+            "SELECT c.*, col.name as column_name, col.board_id,
+                    u.name as assigned_name, wc.contact_name, wc.phone as contact_phone,
+                    wc.remote_jid, cb.investment_range
+             FROM crm_cards c
+             JOIN crm_columns col ON c.column_id = col.id
+             LEFT JOIN users u ON c.assigned_to = u.id
+             LEFT JOIN whatsapp_contacts wc ON c.contact_id = wc.id
+             LEFT JOIN commercial_briefings cb ON cb.contact_id = c.contact_id
+             WHERE c.id = ?",
+            [$id]
+        );
+    }
+
+    public function createCard($data)
+    {
+        // Pegar próxima posição na coluna
+        $last = $this->db->fetch(
+            "SELECT MAX(position) as max_pos FROM crm_cards WHERE column_id = ?",
+            [$data['column_id']]
+        );
+        $data['position'] = ($last['max_pos'] ?? -1) + 1;
+
+        $cardId = $this->db->insert('crm_cards', $data);
+
+        // Registrar atividade
+        $this->addActivity($cardId, $data['created_by'] ?? null, 'create', 'Card criado');
+
+        return $cardId;
+    }
+
+    public function updateCard($id, $data)
+    {
+        return $this->db->update('crm_cards', $data, 'id = ?', [$id]);
+    }
+
+    public function moveCard($cardId, $newColumnId, $position = 0)
+    {
+        $card = $this->findCard($cardId);
+        $this->db->update('crm_cards', [
+            'column_id' => $newColumnId,
+            'position' => $position,
+        ], 'id = ?', [$cardId]);
+
+        // Log de movimentação
+        $newCol = $this->findColumn($newColumnId);
+        $this->addActivity($cardId, null, 'move', "Movido para \"{$newCol['name']}\"");
+    }
+
+    public function deleteCard($id)
+    {
+        return $this->db->delete('crm_cards', 'id = ?', [$id]);
+    }
+
+    /**
+     * Move o card mais recente de um contato para a coluna de nome $columnName
+     * (dentro do board desse card) e carimba o desfecho ($outcome).
+     *
+     * Usado pelos gatilhos de "perda" (IA classifica recusa, opt-out, fim da
+     * sequência sem resposta, etiqueta manual "sem interesse"). Fonte única para
+     * manter a coluna do board e o lead_outcome sempre consistentes.
+     *
+     * Regras:
+     *  - só move dentro do MESMO board do card (a coluna é resolvida pelo nome
+     *    naquele board);
+     *  - anti-regressão: não puxa o card para uma coluna de posição anterior;
+     *  - idempotente: se já está na coluna certa, só garante o desfecho.
+     *
+     * @return bool true se encontrou um card e aplicou (moveu e/ou carimbou).
+     */
+    public function markOutcomeByContact($contactId, string $columnName, string $outcome = 'lost'): bool
+    {
+        $card = $this->db->fetch(
+            "SELECT cc.id, cc.column_id, cc.lead_outcome, cur.position AS cur_pos, cur.board_id
+             FROM crm_cards cc
+             LEFT JOIN crm_columns cur ON cc.column_id = cur.id
+             WHERE cc.contact_id = ? ORDER BY cc.id DESC LIMIT 1",
+            [$contactId]
+        );
+        if (!$card) return false;
+
+        // Resolve a coluna de destino pelo NOME, no board do card.
+        $target = null;
+        if (!empty($card['board_id'])) {
+            $target = $this->db->fetch(
+                "SELECT id, position FROM crm_columns WHERE board_id = ? AND name = ? ORDER BY position ASC LIMIT 1",
+                [$card['board_id'], $columnName]
+            );
+        }
+
+        // Move o card, se a coluna existir e não for regressão.
+        if ($target && (int)$target['id'] !== (int)$card['column_id']) {
+            $isRegression = $card['cur_pos'] !== null && (int)$target['position'] < (int)$card['cur_pos'];
+            if (!$isRegression) {
+                $this->moveCard($card['id'], (int)$target['id'], 0);
+            }
+        }
+
+        // Carimba o desfecho (idempotente).
+        if (($card['lead_outcome'] ?? 'open') !== $outcome) {
+            $this->updateCard($card['id'], [
+                'lead_outcome' => $outcome,
+                'outcome_at' => date('Y-m-d H:i:s'),
+            ]);
+        }
+
+        // Colunas terminais de prospecção ("Sem Interesse"/"Sem Resposta") bloqueiam
+        // novos envios: marca unsubscribed=1 e PROPAGA aos irmãos (duplicados).
+        if (CrmRules::isNotInterestedColumn($columnName) || CrmRules::isNoReplyColumn($columnName)) {
+            try {
+                (new WhatsappContact())->unsubscribeWithSiblings(
+                    (int) $contactId,
+                    CrmRules::isNotInterestedColumn($columnName) ? 'Sem interesse' : 'Sem resposta'
+                );
+            } catch (\Throwable $e) { /* não interrompe o desfecho por falha no bloqueio */ }
+        }
+        return true;
+    }
+
+    /**
+     * Move o card mais recente de um contato para a coluna de nome $columnName,
+     * SEM carimbar desfecho de perda (diferente de markOutcomeByContact). Cria a
+     * coluna no board do card se ela ainda não existir. Reabre o card (lead_outcome
+     * volta a 'open') para que o retrabalho interno conte como negócio em aberto.
+     *
+     * Usado quando: a reunião é encerrada (vai para "Análise interna") e quando o
+     * cliente recusa a proposta (volta para "Análise interna" para refazer).
+     *
+     * @return bool true se encontrou um card e aplicou.
+     */
+    public function moveContactToColumn($contactId, string $columnName): bool
+    {
+        $card = $this->db->fetch(
+            "SELECT cc.id, cc.column_id, cur.board_id
+             FROM crm_cards cc
+             LEFT JOIN crm_columns cur ON cc.column_id = cur.id
+             WHERE cc.contact_id = ? ORDER BY cc.id DESC LIMIT 1",
+            [$contactId]
+        );
+        if (!$card || empty($card['board_id'])) return false;
+
+        // Resolve a coluna de destino pelo NOME no board do card; cria se faltar.
+        $target = $this->db->fetch(
+            "SELECT id FROM crm_columns WHERE board_id = ? AND name = ? ORDER BY position ASC LIMIT 1",
+            [$card['board_id'], $columnName]
+        );
+        if (!$target) {
+            // Cria a coluna ao final do board (maior position + 1).
+            $max = $this->db->fetch("SELECT COALESCE(MAX(position), -1) AS p FROM crm_columns WHERE board_id = ?", [$card['board_id']]);
+            $pos = (int)($max['p'] ?? -1) + 1;
+            $newId = $this->db->insert('crm_columns', [
+                'board_id' => (int)$card['board_id'],
+                'name' => $columnName,
+                'position' => $pos,
+            ]);
+            $target = ['id' => $newId];
+        }
+
+        if ((int)$target['id'] !== (int)$card['column_id']) {
+            $this->moveCard($card['id'], (int)$target['id'], 0);
+        }
+        // Garante que o card está "aberto" (retrabalho interno, não é perda/ganho).
+        $this->updateCard($card['id'], ['lead_outcome' => 'open', 'outcome_at' => null]);
+        return true;
+    }
+
+    /**
+     * Primeira coluna (menor position) de um board.
+     */
+    public function getFirstColumn($boardId)
+    {
+        return $this->db->fetch(
+            "SELECT * FROM crm_columns WHERE board_id = ? ORDER BY position ASC LIMIT 1",
+            [$boardId]
+        );
+    }
+
+    /**
+     * Move para a primeira coluna os cards cuja data de retomada já chegou.
+     * Retorna a quantidade movida.
+     */
+    public function processFollowUps()
+    {
+        $cards = $this->db->fetchAll(
+            "SELECT c.id, c.follow_up_column_id, col.board_id
+             FROM crm_cards c
+             JOIN crm_columns col ON c.column_id = col.id
+             WHERE c.follow_up_at IS NOT NULL
+               AND c.follow_up_at <= NOW()
+               AND c.lead_outcome = 'open'"
+        );
+        $moved = 0;
+        foreach ($cards as $c) {
+            // Coluna de destino escolhida, ou a primeira coluna como fallback
+            $targetColumnId = null;
+            $targetName = '';
+            if (!empty($c['follow_up_column_id'])) {
+                $target = $this->findColumn($c['follow_up_column_id']);
+                if ($target) { $targetColumnId = $target['id']; $targetName = $target['name']; }
+            }
+            if (!$targetColumnId) {
+                $first = $this->getFirstColumn($c['board_id']);
+                if ($first) { $targetColumnId = $first['id']; $targetName = $first['name']; }
+            }
+            if ($targetColumnId) {
+                $this->db->update('crm_cards', [
+                    'column_id' => $targetColumnId,
+                    'position' => 0,
+                    'follow_up_at' => null,
+                    'follow_up_column_id' => null,
+                    'in_recovery' => 1,
+                ], 'id = ?', [$c['id']]);
+                $this->addActivity($c['id'], null, 'move', "Retomada de contato — movido para \"{$targetName}\" (Em recuperação)");
+                $moved++;
+            }
+        }
+        return $moved;
+    }
+
+    /**
+     * Comissões dos usuários comerciais em um período.
+     * Baseado nos leads convertidos por cada comercial e no valor cadastrado no lead.
+     * $month no formato 'YYYY-MM' (opcional). $userId opcional.
+     */
+    public function getCommissions($month = null, $userId = null)
+    {
+        // Comissão de fechamento: leads onde o user é converted_by (ele fechou)
+        // Se ele também é o prospected_by (ou assigned_to), usa commission_closing_percent
+        // Se ele NÃO é o prospected_by, usa commission_closing_percent do closer
+        // Comissão de prospecção: leads onde o user é prospected_by mas outro fechou
+        // Usa commission_prospection_percent do prospector
+
+        // IMPORTANTE: usamos SUBQUERIES AGREGADAS SEPARADAS (fechamento e
+        // prospecção), e NÃO um duplo LEFT JOIN + SUM(DISTINCT). O antigo
+        // SUM(DISTINCT value) colapsava dois cards diferentes de MESMO valor
+        // (ex.: dois negócios de R$ 1.000) em um só, subestimando a comissão. Com
+        // subqueries por usuário, cada card é somado corretamente (SUM sobre linhas).
+        $monthClosed = $month ? " AND DATE_FORMAT(cc.outcome_at, '%Y-%m') = ?" : "";
+        $monthProsp  = $month ? " AND DATE_FORMAT(cp.outcome_at, '%Y-%m') = ?" : "";
+
+        $sql = "SELECT u.id as user_id, u.name as user_name,
+                       u.commission_percent, u.commission_prospection_percent, u.commission_closing_percent,
+                       (SELECT COUNT(*) FROM crm_cards cc
+                         WHERE cc.converted_by = u.id AND cc.lead_outcome = 'converted'{$monthClosed}) AS closed_count,
+                       (SELECT COALESCE(SUM(cc.value),0) FROM crm_cards cc
+                         WHERE cc.converted_by = u.id AND cc.lead_outcome = 'converted'{$monthClosed}) AS closed_value,
+                       (SELECT COUNT(*) FROM crm_cards cp
+                         WHERE cp.prospected_by = u.id AND cp.lead_outcome = 'converted'
+                           AND cp.converted_by <> u.id{$monthProsp}) AS prospected_count,
+                       (SELECT COALESCE(SUM(cp.value),0) FROM crm_cards cp
+                         WHERE cp.prospected_by = u.id AND cp.lead_outcome = 'converted'
+                           AND cp.converted_by <> u.id{$monthProsp}) AS prospected_value
+                FROM users u
+                WHERE u.role = 'comercial'";
+        // Ordem dos parâmetros segue a ordem das subqueries no SELECT:
+        // closed_count, closed_value, prospected_count, prospected_value.
+        $params = [];
+        if ($month) { $params[] = $month; $params[] = $month; $params[] = $month; $params[] = $month; }
+        if ($userId) {
+            $sql .= " AND u.id = ?";
+            $params[] = $userId;
+        }
+        $sql .= " ORDER BY u.name";
+
+        $rows = $this->db->fetchAll($sql, $params);
+
+        // Calcula comissão total por usuário
+        foreach ($rows as &$r) {
+            $closingPct = (float)$r['commission_closing_percent'] ?: (float)$r['commission_percent'];
+            $prospPct = (float)$r['commission_prospection_percent'];
+
+            $closingCommission = (float)$r['closed_value'] * $closingPct / 100;
+            $prospCommission = (float)$r['prospected_value'] * $prospPct / 100;
+
+            $r['closing_commission'] = $closingCommission;
+            $r['prospection_commission'] = $prospCommission;
+            $r['commission_value'] = $closingCommission + $prospCommission;
+            $r['converted_count'] = (int)$r['closed_count'] + (int)$r['prospected_count'];
+            $r['total_value'] = (float)$r['closed_value'] + (float)$r['prospected_value'];
+        }
+        unset($r);
+
+        // Ordena por comissão total desc
+        usort($rows, fn($a, $b) => $b['commission_value'] <=> $a['commission_value']);
+
+        return $rows;
+    }
+
+    /**
+     * Leads convertidos por um comercial em um período (lista resumida).
+     */
+    public function getConvertedLeadsByUser($userId, $month = null)
+    {
+        $sql = "SELECT c.id, c.title, c.value, c.outcome_at,
+                       wc.contact_name, wc.phone as contact_phone,
+                       col.name as column_name
+                FROM crm_cards c
+                LEFT JOIN whatsapp_contacts wc ON c.contact_id = wc.id
+                LEFT JOIN crm_columns col ON c.column_id = col.id
+                WHERE c.converted_by = ? AND c.lead_outcome = 'converted'";
+        $params = [$userId];
+        if ($month) {
+            $sql .= " AND DATE_FORMAT(c.outcome_at, '%Y-%m') = ?";
+            $params[] = $month;
+        }
+        $sql .= " ORDER BY c.outcome_at DESC";
+        return $this->db->fetchAll($sql, $params);
+    }
+
+    /**
+     * Série temporal dos últimos N meses: leads convertidos e perdidos por mês.
+     */
+    public function getMonthlyTrend($months = 6)
+    {
+        $result = [];
+        for ($i = $months - 1; $i >= 0; $i--) {
+            $ym = date('Y-m', strtotime("-{$i} months"));
+            $converted = $this->db->fetch(
+                "SELECT COUNT(*) as t, COALESCE(SUM(value),0) as v FROM crm_cards
+                 WHERE lead_outcome = 'converted' AND DATE_FORMAT(outcome_at, '%Y-%m') = ?",
+                [$ym]
+            );
+            $lost = $this->db->fetch(
+                "SELECT COUNT(*) as t FROM crm_cards
+                 WHERE lead_outcome = 'lost' AND DATE_FORMAT(outcome_at, '%Y-%m') = ?",
+                [$ym]
+            );
+            $result[] = [
+                'month' => $ym,
+                'label' => date('m/Y', strtotime($ym . '-01')),
+                'converted' => (int)($converted['t'] ?? 0),
+                'converted_value' => (float)($converted['v'] ?? 0),
+                'lost' => (int)($lost['t'] ?? 0),
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Estatísticas do CRM para o dashboard.
+     */
+    public function getDashboardStats()
+    {
+        $total = $this->db->fetch("SELECT COUNT(*) as t FROM crm_cards")['t'] ?? 0;
+        $withLabel = $this->db->fetch("SELECT COUNT(*) as t FROM crm_cards WHERE label_id IS NOT NULL")['t'] ?? 0;
+        $converted = $this->db->fetch("SELECT COUNT(*) as t FROM crm_cards WHERE lead_outcome = 'converted'")['t'] ?? 0;
+        $lost = $this->db->fetch("SELECT COUNT(*) as t FROM crm_cards WHERE lead_outcome = 'lost'")['t'] ?? 0;
+        $open = $this->db->fetch("SELECT COUNT(*) as t FROM crm_cards WHERE lead_outcome = 'open'")['t'] ?? 0;
+
+        // Valores
+        $quotedValue = $this->db->fetch("SELECT COALESCE(SUM(value),0) as v FROM crm_cards")['v'] ?? 0;
+        $convertedValue = $this->db->fetch("SELECT COALESCE(SUM(value),0) as v FROM crm_cards WHERE lead_outcome = 'converted'")['v'] ?? 0;
+        $lostValue = $this->db->fetch("SELECT COALESCE(SUM(value),0) as v FROM crm_cards WHERE lead_outcome = 'lost'")['v'] ?? 0;
+        // Em recuperação ou agendado (follow-up definido), ainda em aberto
+        $recoveryValue = $this->db->fetch(
+            "SELECT COALESCE(SUM(value),0) as v FROM crm_cards
+             WHERE lead_outcome = 'open' AND (in_recovery = 1 OR follow_up_at IS NOT NULL)"
+        )['v'] ?? 0;
+
+        return [
+            'total' => (int)$total,
+            'with_label' => (int)$withLabel,
+            'converted' => (int)$converted,
+            'lost' => (int)$lost,
+            'open' => (int)$open,
+            'total_converted_value' => (float)$convertedValue,
+            'quoted_value' => (float)$quotedValue,
+            'converted_value' => (float)$convertedValue,
+            'lost_value' => (float)$lostValue,
+            'recovery_value' => (float)$recoveryValue,
+        ];
+    }
+
+    // =========================================
+    // ATIVIDADES
+    // =========================================
+
+    public function getActivities($cardId, $limit = 20)
+    {
+        return $this->db->fetchAll(
+            "SELECT a.*, u.name as user_name
+             FROM crm_card_activities a
+             LEFT JOIN users u ON a.user_id = u.id
+             WHERE a.card_id = ?
+             ORDER BY a.created_at DESC
+             LIMIT ?",
+            [$cardId, $limit]
+        );
+    }
+
+    public function addActivity($cardId, $userId, $type, $description)
+    {
+        return $this->db->insert('crm_card_activities', [
+            'card_id' => $cardId,
+            'user_id' => $userId,
+            'activity_type' => $type,
+            'description' => $description,
+        ]);
+    }
+}

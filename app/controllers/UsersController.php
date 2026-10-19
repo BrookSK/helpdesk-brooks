@@ -1,0 +1,413 @@
+<?php
+
+class UsersController extends Controller
+{
+    private $userModel;
+
+    public function __construct()
+    {
+        $this->userModel = new User();
+    }
+
+    public function index()
+    {
+        $this->requireRole(['super_admin']);
+        $user = $this->currentUser();
+        $users = $this->userModel->getAll();
+        $this->view('admin/users', ['user' => $user, 'users' => $users]);
+    }
+
+    public function create()
+    {
+        $this->requireRole(['super_admin']);
+        $user = $this->currentUser();
+        $this->view('admin/user_form', ['user' => $user, 'editUser' => null]);
+    }
+
+    public function store()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('users');
+        }
+
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $phone = trim($_POST['phone'] ?? '');
+        $role = $_POST['role'] ?? 'client';
+        $companyName = trim($_POST['company_name'] ?? '');
+        $companyId = $_POST['company_id'] ?? '';
+        $isOwner = isset($_POST['is_company_owner']) ? 1 : 0;
+
+        if (empty($name) || empty($email)) {
+            flash('error', 'Nome e email são obrigatórios.');
+            $this->redirect('users/create');
+        }
+
+        // Papel precisa ser um valor válido do enum (evita gravar lixo/role forjado).
+        if (!Permissions::isValidRole($role)) {
+            flash('error', 'Papel de usuário inválido.');
+            $this->redirect('users/create');
+        }
+
+        if ($this->userModel->findByEmail($email)) {
+            flash('error', 'Este email já está cadastrado.');
+            $this->redirect('users/create');
+        }
+
+        // Criar empresa se necessário
+        $finalCompanyId = null;
+        if ($role === 'client') {
+            if (!empty($companyName) && empty($companyId)) {
+                $companyModel = new Company();
+                $finalCompanyId = $companyModel->create(['name' => $companyName, 'email' => $email, 'phone' => $phone]);
+            } elseif (!empty($companyId)) {
+                $finalCompanyId = (int)$companyId;
+            }
+        }
+
+        $db = Database::getInstance();
+        // Se nenhuma senha for informada, gera uma aleatória e envia convite de primeiro acesso
+        $sendInvite = empty($password);
+        $rawPassword = $sendInvite ? bin2hex(random_bytes(8)) : $password;
+        $seeAll = isset($_POST['see_all_companies']) ? 1 : 0;
+        $commission = ($role === 'comercial') ? floatval($_POST['commission_percent'] ?? 0) : 0;
+        $commissionProspection = ($role === 'comercial') ? floatval($_POST['commission_prospection_percent'] ?? 0) : 0;
+        $commissionClosing = ($role === 'comercial') ? floatval($_POST['commission_closing_percent'] ?? 0) : 0;
+        $userId = $db->insert('users', [
+            'name' => $name,
+            'email' => $email,
+            'password' => password_hash($rawPassword, PASSWORD_DEFAULT),
+            'phone' => $phone,
+            'role' => $role,
+            'company_id' => $finalCompanyId,
+            'is_company_owner' => ($role === 'client' && $isOwner) ? 1 : 0,
+            'see_all_companies' => (in_array($role, ['attendant', 'whatsapp_agent', 'developer', 'analyst', 'comercial']) && $seeAll) ? 1 : 0,
+            'commission_percent' => $commission,
+            'commission_prospection_percent' => $commissionProspection,
+            'commission_closing_percent' => $commissionClosing,
+            'apollo_daily_credits' => ($role === 'comercial') ? max(0, intval($_POST['apollo_daily_credits'] ?? 0)) : 0,
+            'sip_user' => trim($_POST['sip_user'] ?? '') ?: null,
+            'sip_password' => trim($_POST['sip_password'] ?? '') ?: null,
+            'is_active' => 1,
+        ]);
+
+        // PIN de login (por usuário, qualquer papel): o primeiro PIN é gerado
+        // pelo sistema. Se o admin digitou um PIN manualmente, respeita-o
+        // (validando 4 dígitos + unicidade); senão gera um automático. O usuário
+        // pode alterá-lo depois na "Minha Conta".
+        $manualClientPin = trim($_POST['client_pin'] ?? '');
+        if ($manualClientPin !== '') {
+            if (!ClientPinRules::isValidFormat($manualClientPin)) {
+                flash('error', 'O PIN de acesso deve ter exatamente 4 dígitos numéricos.');
+                $this->redirect('users/create');
+            }
+            if ($this->userModel->clientPinExists($manualClientPin)) {
+                flash('error', 'Este PIN de acesso já existe.');
+                $this->redirect('users/create');
+            }
+            $this->userModel->setClientPin($userId, $manualClientPin);
+        } else {
+            // Primeiro acesso: sistema gera o PIN automaticamente.
+            $this->userModel->setClientPin($userId);
+        }
+
+        if ($sendInvite) {
+            // Enviar link de definição de senha (auto-login após definir)
+            $this->userModel->sendFirstAccessInvite($userId);
+            flash('success', 'Usuário criado! Um email foi enviado para definição de senha.');
+        } else {
+            // Enviar email com credenciais definidas manualmente
+            $loginUrl = baseUrl('login');
+            $htmlBody = Mailer::template(
+                'Seu acesso foi criado!',
+                "<p>Olá, <strong>" . htmlspecialchars($name) . "</strong>!</p>
+                <p>Seu acesso ao sistema de Helpdesk foi criado. Use as credenciais abaixo:</p>
+                <div style='background:#f5f7fa;border-radius:8px;padding:15px;margin:15px 0;'>
+                    <p style='margin:5px 0;'><strong>Email:</strong> {$email}</p>
+                    <p style='margin:5px 0;'><strong>Senha:</strong> {$rawPassword}</p>
+                </div>
+                <p style='text-align:center;margin:20px 0;'>
+                    <a href='{$loginUrl}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
+                        Acessar o Sistema
+                    </a>
+                </p>
+                <p style='font-size:0.82rem;color:#999;'>Recomendamos que altere sua senha no primeiro acesso.</p>"
+            );
+            Mailer::send($email, 'Seu acesso ao Helpdesk - ON Solutions', $htmlBody);
+            flash('success', 'Usuário criado com sucesso! Email enviado com as credenciais.');
+        }
+
+        // Salvar acesso a empresas (equipe interna) e vínculos Multi-Empresas (clientes)
+        if (in_array($role, ['attendant', 'whatsapp_agent', 'developer', 'analyst', 'comercial', 'client']) && isset($_POST['company_access'])) {
+            $companyAccess = $_POST['company_access'];
+            // Para clientes, a empresa principal não deve duplicar no pivot
+            if ($role === 'client' && $finalCompanyId) {
+                $companyAccess = array_values(array_filter($companyAccess, fn($cid) => (int)$cid !== (int)$finalCompanyId));
+            }
+            PlanningCard::setUserCompanyAccess($userId, $companyAccess);
+        }
+
+        $this->redirect('users');
+    }
+
+    public function edit($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        $user = $this->currentUser();
+        $editUser = $this->userModel->findById($id);
+        if (!$editUser) {
+            flash('error', 'Usuário não encontrado.');
+            $this->redirect('users');
+        }
+
+        $this->view('admin/user_form', ['user' => $user, 'editUser' => $editUser]);
+    }
+
+    /**
+     * Ficha de consulta (somente leitura) de um usuário: exibe os mesmos dados
+     * preenchidos no cadastro e as empresas vinculadas. A partir dela é possível
+     * abrir o formulário de edição já existente (users/edit/{id}).
+     * Acessível apenas pelo super_admin.
+     */
+    public function analisar($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        $user = $this->currentUser();
+        $viewUser = $this->userModel->findById($id);
+        if (!$viewUser) {
+            flash('error', 'Usuário não encontrado.');
+            $this->redirect('users');
+        }
+
+        $this->view('admin/user_view', [
+            'user' => $user,
+            'viewUser' => $viewUser,
+            'linkedCompanies' => $this->userModel->getLinkedCompanies($id),
+        ]);
+    }
+
+    /**
+     * Auditoria de um usuário: todos os logins e todas as ações executadas.
+     * Acessível apenas pelo super_admin, a partir do perfil do usuário.
+     */
+    public function activity($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        $user = $this->currentUser();
+        $targetUser = $this->userModel->findById($id);
+        if (!$targetUser) {
+            flash('error', 'Usuário não encontrado.');
+            $this->redirect('users');
+        }
+
+        $activityModel = new ActivityLog();
+
+        // Paginação simples das ações
+        $perPage = 100;
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $offset = ($page - 1) * $perPage;
+
+        $totalActions = $activityModel->countActions($id);
+        $totalPages = max(1, (int)ceil($totalActions / $perPage));
+
+        $this->view('admin/user_activity', [
+            'user' => $user,
+            'targetUser' => $targetUser,
+            'logins' => $activityModel->getLogins($id, 100),
+            'actions' => $activityModel->getActions($id, $perPage, $offset),
+            'totalActions' => $totalActions,
+            'totalLogins' => $activityModel->countLogins($id),
+            'page' => $page,
+            'totalPages' => $totalPages,
+        ]);
+    }
+
+    public function update($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$id) {
+            $this->redirect('users');
+        }
+
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $phone = trim($_POST['phone'] ?? '');
+        $role = $_POST['role'] ?? 'client';
+        $companyId = $_POST['company_id'] ?? null;
+        $companyName = trim($_POST['company_name'] ?? '');
+        $isOwner = isset($_POST['is_company_owner']) ? 1 : 0;
+
+        if (empty($name) || empty($email)) {
+            flash('error', 'Nome e email são obrigatórios.');
+            $this->redirect('users/edit/' . $id);
+        }
+
+        // Papel precisa ser um valor válido do enum (evita gravar lixo/role forjado).
+        if (!Permissions::isValidRole($role)) {
+            flash('error', 'Papel de usuário inválido.');
+            $this->redirect('users/edit/' . $id);
+        }
+
+        // Não deixar o sistema sem administrador: não rebaixar o último super_admin ativo.
+        if ($role !== 'super_admin' && $this->userModel->isLastActiveSuperAdmin($id)) {
+            flash('error', 'Não é possível alterar o papel do último administrador ativo do sistema.');
+            $this->redirect('users/edit/' . $id);
+        }
+
+        $existing = $this->userModel->findByEmail($email);
+        if ($existing && $existing['id'] != $id) {
+            flash('error', 'Este email já está cadastrado.');
+            $this->redirect('users/edit/' . $id);
+        }
+
+        // Resolver empresa
+        $finalCompanyId = null;
+        if ($role === 'client') {
+            if (!empty($companyName) && empty($companyId)) {
+                $companyModel = new Company();
+                $finalCompanyId = $companyModel->create(['name' => $companyName, 'email' => $email, 'phone' => $phone]);
+            } elseif (!empty($companyId)) {
+                $finalCompanyId = (int)$companyId;
+            }
+        }
+
+        $seeAll = isset($_POST['see_all_companies']) ? 1 : 0;
+        $data = [
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone,
+            'role' => $role,
+            'company_id' => $finalCompanyId,
+            'is_company_owner' => ($role === 'client') ? $isOwner : 0,
+            'see_all_companies' => (in_array($role, ['attendant', 'whatsapp_agent', 'developer', 'analyst', 'comercial']) && $seeAll) ? 1 : 0,
+            'commission_percent' => ($role === 'comercial') ? floatval($_POST['commission_percent'] ?? 0) : 0,
+            'commission_prospection_percent' => ($role === 'comercial') ? floatval($_POST['commission_prospection_percent'] ?? 0) : 0,
+            'commission_closing_percent' => ($role === 'comercial') ? floatval($_POST['commission_closing_percent'] ?? 0) : 0,
+            'apollo_daily_credits' => ($role === 'comercial') ? max(0, intval($_POST['apollo_daily_credits'] ?? 0)) : 0,
+            'sip_user' => trim($_POST['sip_user'] ?? '') ?: null,
+        ];
+
+        if (!empty($password)) {
+            $data['password'] = password_hash($password, PASSWORD_DEFAULT);
+        }
+        // Senha SIP é secreta: só atualiza se um novo valor for informado (em branco mantém a atual)
+        if (isset($_POST['sip_password']) && trim($_POST['sip_password']) !== '') {
+            $data['sip_password'] = trim($_POST['sip_password']);
+        }
+
+        // PIN de login (4 dígitos, coluna client_pin) — por usuário, qualquer papel.
+        if (!empty($_POST['client_pin_remove'])) {
+            $this->userModel->clearClientPin($id);
+        } else {
+            $newClientPin = trim($_POST['client_pin'] ?? '');
+            if ($newClientPin !== '') {
+                if (!ClientPinRules::isValidFormat($newClientPin)) {
+                    flash('error', 'O PIN de acesso deve ter exatamente 4 dígitos numéricos.');
+                    $this->redirect('users/edit/' . $id);
+                }
+                if ($this->userModel->clientPinExists($newClientPin, $id)) {
+                    flash('error', 'Este PIN de acesso já existe.');
+                    $this->redirect('users/edit/' . $id);
+                }
+                $this->userModel->setClientPin($id, $newClientPin);
+            }
+            // Vazio e sem "remover": mantém o PIN atual.
+        }
+
+        $db = Database::getInstance();
+        $db->update('users', $data, 'id = ?', [$id]);
+
+        // Salvar ramal SIP (Nvoip) — por usuário
+        $sipUser = trim($_POST['sip_user'] ?? ($_POST['nvoip_sip_user'] ?? ''));
+        $sipPassword = trim($_POST['sip_password'] ?? ($_POST['nvoip_sip_password'] ?? ''));
+        $sipData = ['sip_user' => $sipUser ?: null];
+        if ($sipPassword !== '') {
+            $sipData['sip_password'] = $sipPassword;
+        }
+        $db->update('users', $sipData, 'id = ?', [$id]);
+
+        // Salvar acesso a empresas (equipe interna) e vínculos Multi-Empresas (clientes)
+        $role = $data['role'] ?? $_POST['role'] ?? '';
+        if (in_array($role, ['attendant', 'whatsapp_agent', 'developer', 'analyst', 'comercial', 'client'])) {
+            $companyAccess = $_POST['company_access'] ?? [];
+            // Para clientes, a empresa principal não deve duplicar no pivot
+            if ($role === 'client' && !empty($finalCompanyId)) {
+                $companyAccess = array_values(array_filter($companyAccess, fn($cid) => (int)$cid !== (int)$finalCompanyId));
+            }
+            PlanningCard::setUserCompanyAccess($id, $companyAccess);
+        }
+
+        flash('success', 'Usuário atualizado com sucesso!');
+        $this->redirect('users');
+    }
+
+    public function toggleStatus($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        // Não deixar o sistema sem administrador: não desativar o último super_admin ativo.
+        if ($this->userModel->isLastActiveSuperAdmin($id)) {
+            flash('error', 'Não é possível desativar o último administrador ativo do sistema.');
+            $this->redirect('users');
+        }
+
+        $this->userModel->toggleActive($id);
+        flash('success', 'Status do usuário alterado.');
+        $this->redirect('users');
+    }
+
+    /**
+     * Envia ao usuário um link por email para ele (re)definir o PIN de acesso.
+     * O admin NUNCA vê nem escolhe o PIN: apenas dispara o convite. Quem define
+     * o novo PIN é o próprio usuário, na tela segura (clientpin/resetPin).
+     */
+    public function resendPinReset($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        $target = $this->userModel->findById($id);
+        if (!$target) {
+            flash('error', 'Usuário não encontrado.');
+            $this->redirect('users');
+        }
+        if (empty($target['email'])) {
+            flash('error', 'Este usuário não tem email cadastrado para receber o link.');
+            $this->redirect('users/edit/' . $id);
+        }
+
+        $sent = $this->userModel->sendPinResetInvite($id);
+        if ($sent) {
+            flash('success', 'Link de redefinição de PIN enviado para o email do usuário.');
+        } else {
+            flash('error', 'Não foi possível enviar o email. Tente novamente.');
+        }
+        $this->redirect('users/edit/' . $id);
+    }
+
+    public function delete($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->redirect('users');
+
+        // Não deixar o sistema sem administrador: não excluir o último super_admin ativo.
+        if ($this->userModel->isLastActiveSuperAdmin($id)) {
+            flash('error', 'Não é possível excluir o último administrador ativo do sistema.');
+            $this->redirect('users');
+        }
+
+        $this->userModel->delete($id);
+        flash('success', 'Usuário removido com sucesso!');
+        $this->redirect('users');
+    }
+}

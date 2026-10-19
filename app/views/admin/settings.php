@@ -1,0 +1,1366 @@
+<?php $pageTitle = 'Configurações - ON Solutions Helpdesk'; $currentPage = 'settings'; ?>
+<?php require APP_PATH . '/views/layouts/header.php'; ?>
+<?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
+
+<div class="main-content">
+    <div class="top-bar">
+        <div>
+            <h5 class="mb-0">Configurações</h5>
+            <small class="text-muted">Sistema, email, IA e webhooks</small>
+        </div>
+    </div>
+
+    <?php if ($msg = flash('success')): ?>
+        <div class="alert alert-success alert-dismissible fade show"><?= escape($msg) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    <?php endif; ?>
+
+    <?php
+        $env = $dbInfo['environment'] ?? 'production';
+        $isProd = $env === 'production';
+        $envColor = $isProd ? 'danger' : 'success';
+        $envLabel = $isProd ? 'PRODUÇÃO' : 'BETA / Homologação';
+        $envIcon  = $isProd ? 'bi-database-fill-lock' : 'bi-database-fill-gear';
+        $sourceLabel = [
+            'host'    => 'domínio da requisição',
+            'git'     => 'branch do Git (.git/HEAD)',
+            'default' => 'padrão (assumido produção)',
+        ][$dbInfo['source'] ?? 'default'] ?? 'padrão';
+    ?>
+    <!-- Ambiente / Banco de Dados em uso -->
+    <div class="card mb-4 border-<?= $envColor ?>">
+        <div class="card-header bg-<?= $envColor ?> text-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0" style="font-size:0.9rem"><i class="bi <?= $envIcon ?>"></i> Banco de Dados em uso</h6>
+            <span class="badge bg-white text-<?= $envColor ?> fw-bold"><?= $envLabel ?></span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-sm-4">
+                    <label class="form-label fw-medium small text-muted mb-1">Banco (database)</label>
+                    <div class="fw-bold"><i class="bi bi-hdd-stack"></i> <?= escape($dbInfo['database'] ?? '—') ?></div>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label fw-medium small text-muted mb-1">Host</label>
+                    <div><?= escape($dbInfo['host'] ?? '—') ?></div>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label fw-medium small text-muted mb-1">Usuário</label>
+                    <div><?= escape($dbInfo['username'] ?? '—') ?></div>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label fw-medium small text-muted mb-1">Branch detectada</label>
+                    <div><code><?= escape($dbInfo['branch'] ?? '—') ?></code></div>
+                </div>
+                <div class="col-sm-8">
+                    <label class="form-label fw-medium small text-muted mb-1">Detectado por</label>
+                    <div class="small"><?= escape($sourceLabel) ?><?php if (!empty($dbInfo['http_host'])): ?> <span class="text-muted">(host: <?= escape($dbInfo['http_host']) ?>)</span><?php endif; ?></div>
+                </div>
+            </div>
+            <?php if ($isProd): ?>
+            <div class="alert alert-warning small mt-3 mb-0 py-2 px-3">
+                <i class="bi bi-exclamation-triangle-fill"></i> Você está conectado ao banco de <strong>PRODUÇÃO</strong>. Alterações afetam dados reais.
+            </div>
+            <?php else: ?>
+            <div class="alert alert-success small mt-3 mb-0 py-2 px-3">
+                <i class="bi bi-check-circle-fill"></i> Ambiente de <strong>homologação/beta</strong>. Seguro para testes.
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <form action="<?= baseUrl('settings/save') ?>" method="POST" enctype="multipart/form-data">
+        <!-- Geral -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-gear"></i> Geral</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Nome do Sistema</label>
+                        <input type="text" name="app_name" class="form-control form-control-sm" value="<?= escape($settings['app_name'] ?? '') ?>">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Email do Sistema</label>
+                        <input type="email" name="app_email" class="form-control form-control-sm" value="<?= escape($settings['app_email'] ?? '') ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logo e Favicon -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-image"></i> Logo e Favicon</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Logo do Sistema</label>
+                        <?php if (!empty($settings['app_logo'])): ?>
+                        <div class="mb-2">
+                            <img src="<?= baseUrl($settings['app_logo']) ?>" alt="Logo" style="max-height:50px;background:#1a1a2e;padding:8px 12px;border-radius:8px;">
+                        </div>
+                        <?php endif; ?>
+                        <input type="file" name="app_logo" class="form-control form-control-sm" accept="image/*">
+                        <small class="text-muted">PNG ou SVG recomendado. Fundo transparente.</small>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Favicon</label>
+                        <?php if (!empty($settings['app_favicon'])): ?>
+                        <div class="mb-2">
+                            <img src="<?= baseUrl($settings['app_favicon']) ?>" alt="Favicon" style="width:32px;height:32px;border-radius:4px;border:1px solid #ddd;">
+                        </div>
+                        <?php endif; ?>
+                        <input type="file" name="app_favicon" class="form-control form-control-sm" accept="image/*,.ico">
+                        <small class="text-muted">ICO, PNG ou SVG. Tamanho ideal: 32x32 ou 64x64.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- WhatsApp Flutuante -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-whatsapp"></i> WhatsApp Flutuante</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="whatsapp_enabled" value="1" id="whatsappEnabled" <?= ($settings['whatsapp_enabled'] ?? '') === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-medium small" for="whatsappEnabled">Botão flutuante ativado</label>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Número do WhatsApp</label>
+                        <input type="text" name="whatsapp_number" class="form-control form-control-sm" value="<?= escape($settings['whatsapp_number'] ?? '') ?>" placeholder="5511999999999">
+                        <small class="text-muted">Código do país + DDD + número, sem espaços.</small>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Mensagem Padrão</label>
+                        <input type="text" name="whatsapp_message" class="form-control form-control-sm" value="<?= escape($settings['whatsapp_message'] ?? 'Olá! Preciso de ajuda.') ?>">
+                        <small class="text-muted">Texto pré-preenchido no WhatsApp.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- SMTP -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-envelope"></i> Email (SMTP)</h6>
+                <div class="d-flex gap-2">
+                    <a href="<?= baseUrl('settings/emailAccounts') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-envelope-at"></i> Contas de Prospecção</a>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="testSmtp()">
+                        <i class="bi bi-send-check"></i> Testar
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="smtp-test-result" class="mb-3" style="display:none"></div>
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Servidor SMTP</label>
+                        <input type="text" name="smtp_host" class="form-control form-control-sm" value="<?= escape($settings['smtp_host'] ?? '') ?>" placeholder="smtp.gmail.com">
+                    </div>
+                    <div class="col-6 col-sm-3">
+                        <label class="form-label fw-medium small">Porta</label>
+                        <input type="text" name="smtp_port" class="form-control form-control-sm" value="<?= escape($settings['smtp_port'] ?? '587') ?>">
+                    </div>
+                    <div class="col-6 col-sm-3">
+                        <label class="form-label fw-medium small">Criptografia</label>
+                        <select name="smtp_encryption" class="form-select form-select-sm">
+                            <option value="tls" <?= ($settings['smtp_encryption'] ?? '') === 'tls' ? 'selected' : '' ?>>TLS</option>
+                            <option value="ssl" <?= ($settings['smtp_encryption'] ?? '') === 'ssl' ? 'selected' : '' ?>>SSL</option>
+                            <option value="" <?= empty($settings['smtp_encryption'] ?? '') ? 'selected' : '' ?>>Nenhuma</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Usuário SMTP</label>
+                        <input type="text" name="smtp_username" class="form-control form-control-sm" value="<?= escape($settings['smtp_username'] ?? '') ?>">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Senha SMTP</label>
+                        <input type="password" name="smtp_password" class="form-control form-control-sm" value="<?= escape($settings['smtp_password'] ?? '') ?>">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Nome do Remetente</label>
+                        <input type="text" name="smtp_from_name" class="form-control form-control-sm" value="<?= escape($settings['smtp_from_name'] ?? '') ?>">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Email do Remetente</label>
+                        <input type="email" name="smtp_from_email" class="form-control form-control-sm" value="<?= escape($settings['smtp_from_email'] ?? '') ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assinatura de e-mail por domínio (salva via AJAX, fora do submit principal) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-pen"></i> Assinatura de e-mail (por domínio)</h6></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Uma assinatura por domínio, com os mesmos campos da assinatura padrão (logo, empresa, especialidades, e-mail, site e tagline). Ao enviar, o sistema casa o domínio do remetente com a assinatura correspondente. Sem correspondência, usa a assinatura padrão. <strong>Cada bloco tem seu próprio botão Salvar</strong> (independente do botão geral no fim da página).</p>
+
+                <?php foreach (($emailSignatures ?? []) as $sig): ?>
+                <div class="sig-block border rounded p-3 mb-3">
+                    <input type="hidden" class="sig-id" value="<?= (int)$sig['id'] ?>">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="small"><i class="bi bi-globe"></i> <span class="sig-domain-label"><?= escape($sig['domain']) ?></span></strong>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input sig-active" type="checkbox" <?= !empty($sig['is_active']) ? 'checked' : '' ?>>
+                            <label class="form-check-label small">Ativa</label>
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label small">Domínio</label><input type="text" class="form-control form-control-sm sig-domain" value="<?= escape($sig['domain']) ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">Empresa (negrito)</label><input type="text" class="form-control form-control-sm sig-company" value="<?= escape($sig['company'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">Especialidades</label><input type="text" class="form-control form-control-sm sig-specialties" value="<?= escape($sig['specialties'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">E-mail de contato</label><input type="text" class="form-control form-control-sm sig-contact_email" value="<?= escape($sig['contact_email'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">Site</label><input type="text" class="form-control form-control-sm sig-site" value="<?= escape($sig['site'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">Cor dos links</label><input type="color" class="form-control form-control-sm form-control-color sig-color" value="<?= escape($sig['color'] ?: '#00997D') ?>" style="height:31px;"></div>
+                        <div class="col-md-8"><label class="form-label small">Tagline (linha final)</label><input type="text" class="form-control form-control-sm sig-tagline" value="<?= escape($sig['tagline'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="form-label small">Logo</label><input type="file" class="form-control form-control-sm sig-logo" accept="image/*"></div>
+                        <div class="col-12">
+                            <?php if (!empty($sig['logo'])): ?>
+                                <img src="<?= baseUrl($sig['logo']) ?>" alt="logo" style="max-height:44px;border:1px solid #eee;border-radius:6px;padding:3px;background:#fff;">
+                                <small class="text-muted ms-1">logo atual (vazio = mantém)</small>
+                            <?php else: ?>
+                                <small class="text-muted">Sem logo própria — usa a logo do sistema.</small>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-3">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="saveSignature(this)"><i class="bi bi-check-lg"></i> Salvar assinatura</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteSignature(<?= (int)$sig['id'] ?>)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+
+                <!-- Nova assinatura -->
+                <div class="sig-block border rounded p-3" style="border-style:dashed !important;">
+                    <input type="hidden" class="sig-id" value="">
+                    <strong class="small d-block mb-2"><i class="bi bi-plus-circle"></i> Adicionar assinatura de domínio</strong>
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label small">Domínio *</label><input type="text" class="form-control form-control-sm sig-domain" placeholder="lrvweb.com.br"></div>
+                        <div class="col-md-4"><label class="form-label small">Empresa (negrito)</label><input type="text" class="form-control form-control-sm sig-company" placeholder="LRV Web"></div>
+                        <div class="col-md-4"><label class="form-label small">Especialidades</label><input type="text" class="form-control form-control-sm sig-specialties" placeholder="Sites • Sistemas • Soluções digitais"></div>
+                        <div class="col-md-4"><label class="form-label small">E-mail de contato</label><input type="text" class="form-control form-control-sm sig-contact_email" placeholder="contato@lrvweb.com.br"></div>
+                        <div class="col-md-4"><label class="form-label small">Site</label><input type="text" class="form-control form-control-sm sig-site" placeholder="www.lrvweb.com.br"></div>
+                        <div class="col-md-4"><label class="form-label small">Cor dos links</label><input type="color" class="form-control form-control-sm form-control-color sig-color" value="#0d6efd" style="height:31px;"></div>
+                        <div class="col-md-8"><label class="form-label small">Tagline (linha final)</label><input type="text" class="form-control form-control-sm sig-tagline" placeholder="Presença digital que gera resultado."></div>
+                        <div class="col-md-4"><label class="form-label small">Logo</label><input type="file" class="form-control form-control-sm sig-logo" accept="image/*"></div>
+                    </div>
+                    <input type="hidden" class="sig-active" value="1">
+                    <button type="button" class="btn btn-sm btn-outline-primary mt-3" onclick="saveSignature(this)"><i class="bi bi-plus-lg"></i> Adicionar</button>
+                </div>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- OpenAI -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-robot"></i> OpenAI</h6></div>
+            <div class="card-body">
+                <label class="form-label fw-medium small">API Key</label>
+                <input type="password" name="openai_api_key" class="form-control form-control-sm" value="<?= escape($settings['openai_api_key'] ?? '') ?>" placeholder="sk-...">
+                <small class="text-muted">Necessário para transcrição por voz e datas de marketing.</small>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Agendamento (bloco de sequência) -->
+        <?php
+            $bkDays = $settings['booking_days_of_week'] ?? '1,2,3,4,5';
+            $bkDaysArr = array_filter(array_map('trim', explode(',', $bkDays)));
+            $dayLabels = [1=>'Seg',2=>'Ter',3=>'Qua',4=>'Qui',5=>'Sex',6=>'Sáb',7=>'Dom'];
+        ?>
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-calendar2-check"></i> Agendamento de reuniões</h6></div>
+            <div class="card-body">
+                <p class="text-muted small">Regras do link público de agendamento enviado pelo bloco "Agendamento" das sequências.</p>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Antecedência mínima (dias)</label>
+                        <input type="number" min="0" name="booking_min_advance_days" class="form-control form-control-sm" value="<?= escape($settings['booking_min_advance_days'] ?? '1') ?>">
+                        <small class="text-muted">Nº mínimo de dias a partir de hoje.</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Início do período</label>
+                        <input type="time" name="booking_work_start" class="form-control form-control-sm" value="<?= escape($settings['booking_work_start'] ?? '09:00') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Fim do período</label>
+                        <input type="time" name="booking_work_end" class="form-control form-control-sm" value="<?= escape($settings['booking_work_end'] ?? '18:00') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Intervalo entre horários (min)</label>
+                        <input type="number" min="10" step="5" name="booking_slot_minutes" class="form-control form-control-sm" value="<?= escape($settings['booking_slot_minutes'] ?? '30') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Duração da reunião (min)</label>
+                        <input type="number" min="15" step="15" name="booking_duration_min" class="form-control form-control-sm" value="<?= escape($settings['booking_duration_min'] ?? '45') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Notificar antes (horas)</label>
+                        <input type="number" min="0" step="1" name="booking_notify_hours_before" class="form-control form-control-sm" value="<?= escape($settings['booking_notify_hours_before'] ?? '24') ?>">
+                        <small class="text-muted">Lembrete por e-mail/WhatsApp antes da reunião.</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Validade do link (dias)</label>
+                        <input type="number" min="1" name="booking_link_expiry_days" class="form-control form-control-sm" value="<?= escape($settings['booking_link_expiry_days'] ?? '30') ?>">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-medium small d-block">Dias da semana disponíveis</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            <?php foreach ($dayLabels as $num => $lbl): ?>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="booking_days[]" value="<?= $num ?>" id="bkday<?= $num ?>" <?= in_array((string)$num, $bkDaysArr, true) ? 'checked' : '' ?>>
+                                <label class="form-check-label small" for="bkday<?= $num ?>"><?= $lbl ?></label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="booking_days_of_week" id="booking_days_of_week" value="<?= escape($bkDays) ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Relatório Diário (RDO) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-journal-text"></i> Relatório Diário (RDO)</h6></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Define o horário limite para preenchimento do relatório diário.
+                    Após esse horário, o relatório fica bloqueado e o profissional precisa solicitar liberação ao administrador.
+                </p>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-medium small">Horário limite de preenchimento</label>
+                        <input type="time" name="rdo_deadline_time" class="form-control form-control-sm"
+                               value="<?= escape(substr($settings['rdo_deadline_time'] ?? '19:00:00', 0, 5)) ?>">
+                        <small class="text-muted">Padrão: 19:00. Relatórios preenchidos após esse horário geram pendência de revisão.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- URL pública do sistema (tracking de e-mail, webhooks) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-link-45deg"></i> URL pública do sistema</h6></div>
+            <div class="card-body">
+                <label class="form-label fw-medium small">URL base pública (HTTPS)</label>
+                <input type="text" name="app_public_url" class="form-control form-control-sm" value="<?= escape($settings['app_public_url'] ?? '') ?>" placeholder="https://<?= escape($_SERVER['HTTP_HOST'] ?? 'seudominio.com.br') ?>">
+                <small class="text-muted d-block">
+                    Usada no <strong>pixel de rastreio de abertura de e-mails</strong> e nos webhooks. Precisa ser o domínio acessível pela internet.
+                    Se ficar em branco, o sistema tenta detectar automaticamente (pode falhar em envios pelo cron).
+                    Detectado agora: <code><?= escape(rtrim(baseUrl(''), '/')) ?></code>
+                </small>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Apollo.io (Captação de Leads) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-search"></i> Apollo.io (Captação de Leads)</h6></div>
+            <div class="card-body">
+                <label class="form-label fw-medium small">API Key</label>
+                <input type="password" name="apollo_api_key" class="form-control form-control-sm" value="<?= escape($settings['apollo_api_key'] ?? '') ?>" placeholder="Sua chave x-api-key do Apollo">
+                <small class="text-muted d-block mb-2">Gere em app.apollo.io → Settings → Integrations → API. Usada na aba CRM → Captação de Leads.</small>
+                <label class="form-label fw-medium small">Base URL</label>
+                <input type="text" name="apollo_base_url" class="form-control form-control-sm" value="<?= escape($settings['apollo_base_url'] ?? 'https://api.apollo.io/api/v1') ?>" placeholder="https://api.apollo.io/api/v1">
+                <small class="text-muted d-block mb-2">Padrão: https://api.apollo.io/api/v1 (não altere sem necessidade).</small>
+
+                <label class="form-label fw-medium small">Token do Webhook (telefone)</label>
+                <input type="text" name="apollo_webhook_token" class="form-control form-control-sm" value="<?= escape($settings['apollo_webhook_token'] ?? '') ?>" placeholder="Um token secreto qualquer (ex: gere aleatório)">
+                <small class="text-muted d-block">
+                    O telefone é revelado de forma assíncrona pelo Apollo via webhook. Defina um token e cadastre a URL abaixo na configuração de webhook do Apollo:
+                    <code><?= escape(rtrim(baseUrl(''), '/')) ?>/crm/apolloPhoneWebhook?token=SEU_TOKEN</code>
+                </small>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Buffer (agendamento social) — múltiplas contas -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-share"></i> Buffer (Redes Sociais)</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="openBufferKeyModal()"><i class="bi bi-plus-lg"></i> Adicionar conta</button>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">Conecte uma ou mais contas do Buffer (cada API key). Todos os canais de todas as contas aparecem em Métricas Sociais. Gere a key em <a href="https://publish.buffer.com/settings/api" target="_blank" rel="noopener">publish.buffer.com/settings/api</a>.</p>
+                <div id="buffer-accounts-list" class="d-flex flex-column gap-2">
+                    <div class="text-muted small">Carregando contas...</div>
+                </div>
+                <div class="form-check form-switch mt-3 pt-3 border-top">
+                    <input class="form-check-input" type="checkbox" role="switch" id="buffer_test_mode" name="buffer_test_mode" value="1" <?= (($settings['buffer_test_mode'] ?? '0') === '1') ? 'checked' : '' ?>>
+                    <label class="form-check-label small fw-medium" for="buffer_test_mode">
+                        Modo teste (simulação)
+                    </label>
+                    <small class="text-muted d-block">Quando ativo, o "Agendar no Buffer" simula o envio sem chamar a API real — útil para validar o fluxo sem consumir a cota. Os posts simulados são marcados como <code>sim_*</code> e não vão às redes.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal adicionar conta Buffer -->
+        <div class="modal fade" id="bufferKeyModal" tabindex="-1">
+            <div class="modal-dialog modal-sm">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title"><i class="bi bi-share"></i> Adicionar conta Buffer</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-2">
+                            <label class="form-label small fw-medium">Nome (opcional)</label>
+                            <input type="text" id="bk-label" class="form-control form-control-sm" placeholder="Ex: Conta ON Solutions">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-medium">API Key *</label>
+                            <input type="text" id="bk-key" class="form-control form-control-sm" placeholder="buf_...">
+                        </div>
+                        <div id="bk-error" class="text-danger small" style="display:none;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="bk-save" onclick="saveBufferKey()">Conectar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function(){
+            const B = '<?= baseUrl("") ?>';
+            let bkModal = null;
+            function loadBufferAccounts() {
+                fetch(B + 'buffer/accounts', { headers:{'X-Requested-With':'XMLHttpRequest'} })
+                    .then(r=>r.json()).then(d=>{
+                        const box = document.getElementById('buffer-accounts-list');
+                        const list = d.accounts || [];
+                        if (!list.length) { box.innerHTML = '<div class="text-muted small">Nenhuma conta conectada. Clique em "Adicionar conta".</div>'; return; }
+                        box.innerHTML = list.map(a => `
+                            <div class="d-flex align-items-center justify-content-between border rounded p-2">
+                                <div class="min-w-0">
+                                    <div class="fw-medium small text-truncate">${escBk(a.label || 'Conta Buffer')}</div>
+                                    <div class="text-muted" style="font-size:0.72rem;">${escBk(a.api_key_masked || '')}</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteBufferKey(${a.id})"><i class="bi bi-trash3"></i></button>
+                            </div>`).join('');
+                    }).catch(()=>{});
+            }
+            function escBk(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+            window.openBufferKeyModal = function(){
+                document.getElementById('bk-label').value=''; document.getElementById('bk-key').value='';
+                document.getElementById('bk-error').style.display='none';
+                if(!bkModal) bkModal = new bootstrap.Modal(document.getElementById('bufferKeyModal'));
+                bkModal.show();
+            };
+            window.saveBufferKey = function(){
+                const key = document.getElementById('bk-key').value.trim();
+                const err = document.getElementById('bk-error');
+                if(!key){ err.textContent='Informe a API key.'; err.style.display='block'; return; }
+                const btn = document.getElementById('bk-save'); btn.disabled=true; btn.textContent='Conectando...';
+                const fd = new FormData(); fd.append('api_key', key); fd.append('label', document.getElementById('bk-label').value.trim());
+                fetch(B + 'buffer/addAccount', { method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'} })
+                    .then(r=>r.json()).then(d=>{
+                        btn.disabled=false; btn.textContent='Conectar';
+                        if(d.error){ err.textContent=d.error; err.style.display='block'; return; }
+                        bkModal.hide(); loadBufferAccounts();
+                    }).catch(()=>{ btn.disabled=false; btn.textContent='Conectar'; });
+            };
+            window.deleteBufferKey = function(id){
+                if(!confirm('Remover esta conta Buffer e seus canais?')) return;
+                fetch(B + 'buffer/deleteAccount/' + id, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'} })
+                    .then(r=>r.json()).then(()=> loadBufferAccounts());
+            };
+            document.addEventListener('DOMContentLoaded', loadBufferAccounts);
+        })();
+        </script>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Meta (Facebook / Instagram) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-meta"></i> Meta (Facebook / Instagram)</h6>
+                <div class="d-flex gap-2">
+                    <a href="#metaTutorial" class="btn btn-outline-info btn-sm" data-bs-toggle="collapse" role="button"><i class="bi bi-question-circle"></i> Como gerar o token</a>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="addMetaToken()"><i class="bi bi-plus-lg"></i> Adicionar token</button>
+                </div>
+            </div>
+            <div class="collapse" id="metaTutorial">
+                <div class="card-body border-bottom bg-light" style="font-size:0.78rem;">
+                    <strong><i class="bi bi-book"></i> Tutorial: Como gerar o Access Token da Meta</strong>
+                    <ol class="mt-2 mb-2 ps-3">
+                        <li>Acesse <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a> e crie um App (tipo <strong>Business</strong>) se ainda não tiver.</li>
+                        <li>Vá em <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener"><strong>Graph API Explorer</strong></a>.</li>
+                        <li>Selecione seu App no topo da página.</li>
+                        <li>Em <strong>Permissions</strong>, marque:
+                            <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>instagram_basic</code>, <code>instagram_manage_insights</code>
+                        </li>
+                        <li>Clique em <strong>"Generate Access Token"</strong> — autorize com o Facebook que administra as páginas/Instagram.</li>
+                        <li>Copie o token gerado. <em>Esse token é de curta duração (~1h).</em></li>
+                        <li><strong>Converter para longa duração (~60 dias):</strong> Acesse no navegador:<br>
+                            <code style="word-break:break-all;">https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=<strong>SEU_APP_ID</strong>&client_secret=<strong>SEU_APP_SECRET</strong>&fb_exchange_token=<strong>TOKEN_CURTO</strong></code><br>
+                            O <code>access_token</code> retornado é o de longa duração — cole aqui.
+                        </li>
+                        <li>Para <strong>outra conta/cliente</strong>: repita o processo logado com a outra conta Facebook e clique em "Adicionar token".</li>
+                    </ol>
+                    <div class="d-flex gap-2">
+                        <a href="https://developers.facebook.com/tools/explorer/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-box-arrow-up-right"></i> Graph API Explorer</a>
+                        <a href="https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived/" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Docs: Token de longa duração</a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-3">Token de usuário/sistema de longa duração com <code>instagram_business_basic</code>, <code>instagram_business_manage_insights</code> e <code>pages_read_engagement</code>. Cada token representa uma conta/cliente diferente.</small>
+                <div id="meta-tokens-list">
+                    <?php
+                    // Carrega todos os tokens Meta existentes (meta_access_token, meta_access_token_2, ...)
+                    $metaTokens = [];
+                    if (!empty($settings['meta_access_token'])) $metaTokens[] = $settings['meta_access_token'];
+                    for ($i = 2; $i <= 20; $i++) {
+                        $k = 'meta_access_token_' . $i;
+                        if (!empty($settings[$k])) $metaTokens[] = $settings[$k];
+                    }
+                    if (empty($metaTokens)) $metaTokens[] = ''; // pelo menos 1 campo vazio
+                    foreach ($metaTokens as $idx => $tkn):
+                        $fieldName = $idx === 0 ? 'meta_tokens[]' : 'meta_tokens[]';
+                    ?>
+                    <div class="input-group input-group-sm mb-2 meta-token-row">
+                        <span class="input-group-text"><?= $idx + 1 ?></span>
+                        <input type="password" name="meta_tokens[]" class="form-control" value="<?= escape($tkn) ?>" placeholder="EAAB...">
+                        <?php if ($idx > 0): ?>
+                        <button type="button" class="btn btn-outline-danger" onclick="this.closest('.meta-token-row').remove()" title="Remover"><i class="bi bi-trash3"></i></button>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- LinkedIn (Páginas de organização) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-linkedin"></i> LinkedIn (Organização)</h6>
+                <div class="d-flex gap-2">
+                    <a href="#linkedinTutorial" class="btn btn-outline-info btn-sm" data-bs-toggle="collapse" role="button"><i class="bi bi-question-circle"></i> Como gerar o token</a>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="addLinkedinToken()"><i class="bi bi-plus-lg"></i> Adicionar token</button>
+                </div>
+            </div>
+            <div class="collapse" id="linkedinTutorial">
+                <div class="card-body border-bottom bg-light" style="font-size:0.78rem;">
+                    <strong><i class="bi bi-book"></i> Tutorial: Como gerar o Access Token do LinkedIn</strong>
+                    <ol class="mt-2 mb-2 ps-3">
+                        <li>Acesse <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener">linkedin.com/developers/apps</a> e crie um App (ou use um existente).</li>
+                        <li>No app, vá na aba <strong>"Products"</strong> e solicite acesso a <strong>"Community Management API"</strong>.</li>
+                        <li>Na aba <strong>"Auth"</strong>, copie o <code>Client ID</code> e o <code>Client Secret</code>.</li>
+                        <li>Na mesma aba, adicione uma <strong>Redirect URL</strong> (ex: <code>https://helpdesk.onsolutionsbrasil.com.br/callback</code>).</li>
+                        <li>Acesse no navegador para autorizar:<br>
+                            <code style="word-break:break-all;">https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=<strong>SEU_CLIENT_ID</strong>&redirect_uri=<strong>SUA_REDIRECT_URL</strong>&scope=r_organization_social%20r_organization_followers%20rw_organization_admin</code>
+                        </li>
+                        <li>Após autorizar, você será redirecionado com <code>?code=XXXXX</code> na URL. Copie esse código.</li>
+                        <li>Troque o code pelo token via POST (use o Postman, Insomnia ou terminal):<br>
+                            <code style="word-break:break-all;">POST https://www.linkedin.com/oauth/v2/accessToken<br>
+                            grant_type=authorization_code&code=<strong>CODIGO</strong>&redirect_uri=<strong>SUA_REDIRECT_URL</strong>&client_id=<strong>CLIENT_ID</strong>&client_secret=<strong>CLIENT_SECRET</strong></code>
+                        </li>
+                        <li>O <code>access_token</code> retornado dura <strong>60 dias</strong>. Cole aqui.</li>
+                        <li>Para outra organização com admin diferente: repita logado com a outra conta e clique em "Adicionar token".</li>
+                    </ol>
+                    <div class="d-flex gap-2">
+                        <a href="https://www.linkedin.com/developers/apps" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-box-arrow-up-right"></i> LinkedIn Developer Apps</a>
+                        <a href="https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Docs: OAuth 2.0 Flow</a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-3">Token OAuth para acessar dados da organização. Cada token representa uma organização/cliente diferente.</small>
+
+                <!-- Credenciais do App LinkedIn (para OAuth automático) -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-medium">Client ID</label>
+                        <input type="text" name="linkedin_client_id" class="form-control form-control-sm" value="<?= escape($settings['linkedin_client_id'] ?? '') ?>" placeholder="77qae2ikx3r2b7">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-medium">Client Secret</label>
+                        <input type="password" name="linkedin_client_secret" class="form-control form-control-sm" value="<?= escape($settings['linkedin_client_secret'] ?? '') ?>" placeholder="WPL_AP1.xxxxx">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-medium">Escopos (separados por espaço)</label>
+                        <input type="text" name="linkedin_scopes" class="form-control form-control-sm" id="linkedin-scopes" value="<?= escape($settings['linkedin_scopes'] ?? 'r_organization_social r_organization_followers w_organization_social') ?>" placeholder="r_organization_social r_organization_followers">
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <button type="button" class="btn btn-sm btn-success <?= empty($settings['linkedin_client_id']) ? 'disabled' : '' ?>" onclick="authorizeLinkedin()"><i class="bi bi-key"></i> Autorizar LinkedIn</button>
+                    <small class="text-muted"><i class="bi bi-info-circle"></i> Salve primeiro, depois clique em Autorizar. O token será gerado e salvo automaticamente.</small>
+                </div>
+                <div class="alert alert-light border small py-2 px-3 mb-3">
+                    <strong>Escopos disponíveis (depende do Product adicionado no app):</strong><br>
+                    <code>r_organization_social</code> — ler posts da organização<br>
+                    <code>r_organization_followers</code> — ler seguidores (requer Community Management API)<br>
+                    <code>w_organization_social</code> — postar como organização<br>
+                    <code>r_basicprofile</code> ou <code>openid profile</code> — dados básicos do perfil<br>
+                    <small class="text-muted mt-1 d-block">Se aparecer erro "scope is not valid", vá em <a href="https://www.linkedin.com/developers/apps" target="_blank">LinkedIn Developers</a> → seu app → Products e adicione <strong>Community Management API</strong>.</small>
+                </div>
+
+                <hr class="my-3">
+                <script>
+                function authorizeLinkedin() {
+                    const clientId = document.querySelector('[name="linkedin_client_id"]').value.trim();
+                    const scopes = document.getElementById('linkedin-scopes').value.trim();
+                    if (!clientId) { alert('Preencha o Client ID primeiro.'); return; }
+                    const redirectUri = '<?= rtrim(baseUrl("callback"), "/") ?>';
+                    const url = 'https://www.linkedin.com/oauth/v2/authorization?response_type=code'
+                        + '&client_id=' + encodeURIComponent(clientId)
+                        + '&redirect_uri=' + encodeURIComponent(redirectUri)
+                        + '&scope=' + encodeURIComponent(scopes)
+                        + '&state=linkedin';
+                    window.location.href = url;
+                }
+                </script>
+                <label class="form-label small fw-medium">Tokens salvos</label>
+                <div id="linkedin-tokens-list">
+                    <?php
+                    $linkedinTokens = [];
+                    if (!empty($settings['linkedin_access_token'])) $linkedinTokens[] = $settings['linkedin_access_token'];
+                    for ($i = 2; $i <= 20; $i++) {
+                        $k = 'linkedin_access_token_' . $i;
+                        if (!empty($settings[$k])) $linkedinTokens[] = $settings[$k];
+                    }
+                    if (empty($linkedinTokens)) $linkedinTokens[] = '';
+                    foreach ($linkedinTokens as $idx => $tkn):
+                    ?>
+                    <div class="input-group input-group-sm mb-2 linkedin-token-row">
+                        <span class="input-group-text"><?= $idx + 1 ?></span>
+                        <input type="password" name="linkedin_tokens[]" class="form-control" value="<?= escape($tkn) ?>" placeholder="AQV...">
+                        <?php if ($idx > 0): ?>
+                        <button type="button" class="btn btn-outline-danger" onclick="this.closest('.linkedin-token-row').remove()" title="Remover"><i class="bi bi-trash3"></i></button>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Google Agenda / Meet -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-google"></i> Google Agenda / Meet</h6></div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-3">Integração para criar eventos no Google Agenda com link do Google Meet ao agendar reuniões. Crie credenciais OAuth (tipo Web) no Google Cloud com o escopo <code>https://www.googleapis.com/auth/calendar</code> e gere um <strong>refresh token</strong> offline.</small>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Client ID</label>
+                        <input type="text" name="google_client_id" class="form-control form-control-sm" value="<?= escape($settings['google_client_id'] ?? '') ?>" placeholder="xxxxx.apps.googleusercontent.com">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Client Secret</label>
+                        <input type="password" name="google_client_secret" class="form-control form-control-sm" value="<?= escape($settings['google_client_secret'] ?? '') ?>" placeholder="GOCSPX-...">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label fw-medium small">Refresh Token</label>
+                        <input type="password" name="google_refresh_token" class="form-control form-control-sm" value="<?= escape($settings['google_refresh_token'] ?? '') ?>" placeholder="1//0g...">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-medium small">Calendar ID</label>
+                        <input type="text" name="google_calendar_id" class="form-control form-control-sm" value="<?= escape($settings['google_calendar_id'] ?? '') ?>" placeholder="primary">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Telefonia (Nvoip) -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-telephone-outbound"></i> Telefonia (Nvoip)</h6></div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-3">Integração de telefonia via API Nvoip v3 (servidor a servidor / <code>client_credentials</code>). Informe as credenciais fornecidas pela Nvoip. A credencial do cliente é secreta e não é reexibida após salva.</small>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Auth Base URL</label>
+                        <input type="text" name="nvoip_auth_base_url" class="form-control form-control-sm" value="<?= escape($settings['nvoip_auth_base_url'] ?? '') ?>" placeholder="https://api.nvoip.com.br/auth">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Base URL</label>
+                        <input type="text" name="nvoip_base_url" class="form-control form-control-sm" value="<?= escape($settings['nvoip_base_url'] ?? '') ?>" placeholder="https://api.nvoip.com.br/v3">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Client ID</label>
+                        <input type="text" name="nvoip_oauth_client_id" class="form-control form-control-sm" value="<?= escape($settings['nvoip_oauth_client_id'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Client Credential <span class="text-muted">(secreto)</span></label>
+                        <input type="password" name="nvoip_oauth_client_credential" class="form-control form-control-sm" value="" placeholder="<?= !empty($settings['nvoip_oauth_client_credential']) ? '•••••••• (salvo — deixe em branco para manter)' : '' ?>" autocomplete="new-password">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Scopes</label>
+                        <input type="text" name="nvoip_oauth_scopes" class="form-control form-control-sm" value="<?= escape($settings['nvoip_oauth_scopes'] ?? '') ?>" placeholder="ex.: call:make call:query">
+                        <small class="text-muted">Use os escopos exibidos ao criar a credencial na Nvoip (para telefonia: <code>call:make</code> e <code>call:query</code>).</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Originador (caller)</label>
+                        <input type="text" name="nvoip_caller" class="form-control form-control-sm" value="<?= escape($settings['nvoip_caller'] ?? '') ?>" placeholder="ex.: 148379001 (Usuário SIP da conta)">
+                        <small class="text-muted">Use o <strong>Usuário SIP</strong> cadastrado na Nvoip (não um número de telefone).</small>
+                    </div>
+                </div>
+
+                <hr class="my-3">
+                <div class="fw-medium small mb-2"><i class="bi bi-headset"></i> Webphone (WebRTC / SIP over WSS)</div>
+                <small class="text-muted d-block mb-2">
+                    Configuração global do servidor. O <strong>ramal e a senha SIP são individuais por usuário</strong>
+                    (defina em <strong>Usuários → editar → Ramal/Senha SIP</strong>). Cada operador precisa de um ramal único na Nvoip.
+                </small>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Servidor WebSocket</label>
+                        <input type="text" name="nvoip_ws_server" class="form-control form-control-sm" value="<?= escape($settings['nvoip_ws_server'] ?? 'wss://app.nvoip.com.br:7443') ?>" placeholder="wss://app.nvoip.com.br:7443">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Domínio SIP</label>
+                        <input type="text" name="nvoip_sip_domain" class="form-control form-control-sm" value="<?= escape($settings['nvoip_sip_domain'] ?? 'app.nvoip.com.br') ?>" placeholder="app.nvoip.com.br">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-medium small">Formato de discagem</label>
+                        <select name="nvoip_dial_format" class="form-select form-select-sm">
+                            <option value="ddi" <?= ($settings['nvoip_dial_format'] ?? 'ddi') === 'ddi' ? 'selected' : '' ?>>55 + DDD + número (ex.: 5517991253062) — recomendado</option>
+                            <option value="local" <?= ($settings['nvoip_dial_format'] ?? '') === 'local' ? 'selected' : '' ?>>DDD + número (ex.: 17991253062)</option>
+                            <option value="zero" <?= ($settings['nvoip_dial_format'] ?? '') === 'zero' ? 'selected' : '' ?>>0 + DDD + número (ex.: 017991253062)</option>
+                            <option value="zero_ddi" <?= ($settings['nvoip_dial_format'] ?? '') === 'zero_ddi' ? 'selected' : '' ?>>0 + 55 + DDD + número (ex.: 05517991253062)</option>
+                            <option value="e164" <?= ($settings['nvoip_dial_format'] ?? '') === 'e164' ? 'selected' : '' ?>>+55 + DDD + número (E.164, ex.: +5517991253062)</option>
+                        </select>
+                        <small class="text-muted">A Nvoip adiciona o 55 automaticamente — use <strong>DDD + número</strong> (sem 55). Se der "desconhecido", ative "Ligações internacionais" no painel Nvoip (aba Empresa).</small>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-medium small">Servidores ICE (STUN) — JSON (opcional)</label>
+                        <textarea name="nvoip_ice_servers" class="form-control form-control-sm" rows="2" placeholder='[{"urls":"stun:stun.l.google.com:19302"}]'><?= escape($settings['nvoip_ice_servers'] ?? '') ?></textarea>
+                        <small class="text-muted d-block">
+                            A Nvoip usa mídia UDP direta (não usa TURN). Se o ramal registra mas a chamada cai com <code>408</code> após o toque (sem áudio),
+                            o problema é o <strong>firewall da rede</strong>. Libere na saída para <code>app.nvoip.com.br</code> (54.233.253.44):
+                            <strong>TCP 7443</strong> (WSS) e <strong>UDP 10000–60000</strong> (áudio RTP/WebRTC); desative <strong>SIP ALG</strong> e não aplique inspeção SSL nesse domínio.
+                        </small>
+                    </div>
+                </div>
+                <div class="mt-3 d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="testNvoip(this)"><i class="bi bi-plug"></i> Testar conexão</button>
+                    <span id="nvoip-test-result" class="small" style="display:none;"></span>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function testNvoip(btn) {
+            const result = document.getElementById('nvoip-test-result');
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testando...';
+            result.style.display = 'none';
+            fetch('<?= baseUrl("settings/testNvoip") ?>', { method: 'POST', headers: {'X-Requested-With':'XMLHttpRequest'} })
+                .then(r => r.json())
+                .then(data => {
+                    btn.disabled = false; btn.innerHTML = original;
+                    result.style.display = '';
+                    result.className = 'small ' + (data.success ? 'text-success' : 'text-danger');
+                    result.textContent = data.message || (data.success ? 'OK' : 'Falha');
+                })
+                .catch(() => {
+                    btn.disabled = false; btn.innerHTML = original;
+                    result.style.display = '';
+                    result.className = 'small text-danger';
+                    result.textContent = 'Erro ao testar a conexão.';
+                });
+        }
+        </script>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <script>
+        function addMetaToken() {
+            const list = document.getElementById('meta-tokens-list');
+            const count = list.querySelectorAll('.meta-token-row').length + 1;
+            const row = document.createElement('div');
+            row.className = 'input-group input-group-sm mb-2 meta-token-row';
+            row.innerHTML = '<span class="input-group-text">' + count + '</span>'
+                + '<input type="password" name="meta_tokens[]" class="form-control" placeholder="EAAB...">'
+                + '<button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.meta-token-row\').remove()" title="Remover"><i class="bi bi-trash3"></i></button>';
+            list.appendChild(row);
+        }
+        function addLinkedinToken() {
+            const list = document.getElementById('linkedin-tokens-list');
+            const count = list.querySelectorAll('.linkedin-token-row').length + 1;
+            const row = document.createElement('div');
+            row.className = 'input-group input-group-sm mb-2 linkedin-token-row';
+            row.innerHTML = '<span class="input-group-text">' + count + '</span>'
+                + '<input type="password" name="linkedin_tokens[]" class="form-control" placeholder="AQV...">'
+                + '<button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.linkedin-token-row\').remove()" title="Remover"><i class="bi bi-trash3"></i></button>';
+            list.appendChild(row);
+        }
+        </script>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Webhook WhatsApp -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-broadcast"></i> Webhook WhatsApp (Notificação de Novas Demandas)</h6>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="testWebhook()">
+                    <i class="bi bi-send-check"></i> Testar
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="webhook-test-result" class="mb-3" style="display:none"></div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="webhook_enabled" value="1" id="webhookEnabled" <?= ($settings['webhook_enabled'] ?? '') === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-medium small" for="webhookEnabled">Webhook ativado</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-medium small">URL do Webhook</label>
+                        <input type="url" name="webhook_url" class="form-control form-control-sm" value="<?= escape($settings['webhook_url'] ?? '') ?>" placeholder="https://seu-disparo-whatsapp.com/api/send">
+                        <small class="text-muted">URL que receberá o POST com os campos: <code>phone</code>, <code>name</code>, <code>message</code></small>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Telefones (separados por vírgula)</label>
+                        <textarea name="webhook_phones" class="form-control form-control-sm" rows="3" placeholder="5511999999999, 5511888888888"><?= escape($settings['webhook_phones'] ?? $settings['webhook_phone'] ?? '') ?></textarea>
+                        <small class="text-muted">Um disparo será feito para cada número. Formato: código do país + DDD + número.</small>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-medium small">Nomes (separados por vírgula, mesma ordem dos telefones)</label>
+                        <textarea name="webhook_names" class="form-control form-control-sm" rows="3" placeholder="João, Maria"><?= escape($settings['webhook_names'] ?? $settings['webhook_name'] ?? '') ?></textarea>
+                        <small class="text-muted">Nome de cada destinatário correspondente ao telefone.</small>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-medium small">Template da Mensagem</label>
+                        <textarea name="webhook_message_template" class="form-control form-control-sm" rows="4" placeholder="🔔 *Nova Demanda #{ticket_id}*&#10;&#10;*Cliente:* {client_name}&#10;*Título:* {ticket_title}&#10;*Prioridade:* {priority}&#10;&#10;Acesse o painel para ver os detalhes."><?= escape($settings['webhook_message_template'] ?? '') ?></textarea>
+                        <small class="text-muted">
+                            Variáveis disponíveis: <code>{ticket_id}</code>, <code>{ticket_title}</code>, <code>{client_name}</code>, <code>{priority}</code>, <code>{category}</code>, <code>{name}</code> (destinatário), <code>{date}</code>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- Grupo de Notificações WhatsApp -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-people-fill text-success"></i> Grupo Padrão de Notificações (WhatsApp)</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="whatsapp_group_notify_enabled" value="1" id="groupNotifyEnabled" <?= ($settings['whatsapp_group_notify_enabled'] ?? '') === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-medium small" for="groupNotifyEnabled">Enviar atualizações de status para o grupo padrão</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-medium small">Grupo padrão (empresa dona do helpdesk)</label>
+                        <select name="whatsapp_default_group_jid" class="form-select form-select-sm">
+                            <option value="">Nenhum grupo selecionado</option>
+                            <?php foreach (($whatsappGroups ?? []) as $g): ?>
+                            <option value="<?= escape($g['remote_jid']) ?>" <?= ($settings['whatsapp_default_group_jid'] ?? '') === $g['remote_jid'] ? 'selected' : '' ?>>
+                                <?= escape($g['name']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">Todas as atualizações de status das demandas serão enviadas neste grupo, para que todos os integrantes recebam. Usa a conexão de WhatsApp já existente no chat.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Banco -->
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-database"></i> Banco de Dados</h6></div>
+            <div class="card-body">
+                <a href="<?= baseUrl('settings/database') ?>" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-wrench"></i> Configurar Banco
+                </a>
+            </div>
+        </div>
+
+        <?php
+            // Separa as empresas em: com chave (aparecem na tabela) e sem chave
+            // (viram opções do seletor "+ Empresa key", fora deste form).
+            $companiesWithKey = [];
+            $companiesWithoutKey = [];
+            foreach (($companies ?? []) as $comp) {
+                if (isset($apiKeysByCompany[(int)$comp['id']])) {
+                    $companiesWithKey[] = $comp;
+                } else {
+                    $companiesWithoutKey[] = $comp;
+                }
+            }
+        ?>
+
+        <!-- Integrações: API de demandas (agora dentro do "Salvar Configurações") -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex align-items-center">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-plug"></i> Integração — API de demandas</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Cada empresa tem uma chave usada por seu sistema para criar chamados via
+                    <code>POST /api/v1/tickets</code> (cabeçalho <code>X-Api-Key</code>). O <strong>callback de status</strong>
+                    (retorno ao sistema externo) é opcional: quando ativo e com URL válida, o LRV avisa a URL cadastrada
+                    sempre que o status muda em uma demanda criada via API. As alterações desta seção são salvas pelo
+                    botão <strong>"Salvar Configurações"</strong> no fim da página.
+                </p>
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr class="small text-muted">
+                                <th>Empresa</th>
+                                <th>Chave de API</th>
+                                <th>URL de callback de status</th>
+                                <th class="text-center">Ativo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($companiesWithKey as $comp): ?>
+                                <?php
+                                    $key = $apiKeysByCompany[(int)$comp['id']];
+                                    $cbUrl = $key['callback_url'] ?? '';
+                                    $cbEnabled = (int)($key['callback_enabled'] ?? 0) === 1;
+                                    $cid = (int)$comp['id'];
+                                ?>
+                                <tr>
+                                    <td class="small"><?= escape($comp['name']) ?></td>
+                                    <td class="small">
+                                        <div class="input-group input-group-sm" style="max-width:380px;">
+                                            <input type="text" class="form-control" readonly value="<?= escape($key['api_key']) ?>">
+                                            <button type="button" class="btn btn-outline-secondary" title="Copiar"
+                                                onclick="(function(b){var i=b.previousElementSibling;i.select();document.execCommand('copy');})(this)">
+                                                <i class="bi bi-clipboard"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td class="small">
+                                        <input type="url" name="callback_url[<?= $cid ?>]" class="form-control form-control-sm"
+                                               value="<?= escape($cbUrl) ?>" placeholder="https://puntacana.exemplo.com/lrv/callback" style="max-width:420px;">
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="form-check form-switch d-inline-block mb-0">
+                                            <input class="form-check-input" type="checkbox" name="callback_enabled[<?= $cid ?>]" value="1"
+                                                   id="cbEnabled<?= $cid ?>" <?= $cbEnabled ? 'checked' : '' ?>>
+                                            <label class="form-check-label small" for="cbEnabled<?= $cid ?>"></label>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (empty($companiesWithKey)): ?>
+                                <tr><td colspan="4" class="text-muted small">Nenhuma chave gerada ainda. Use "Gerar chave de API de empresa" logo abaixo.</td></tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted small mt-2 mb-0">
+                    Só demandas criadas via API (com <code>external_ref</code>) geram callback — demandas internas do LRV não.
+                    A entrega é assíncrona (fila processada por cron), então não trava a operação interna se o sistema
+                    externo estiver indisponível; em caso de falha há reenvio automático. Se marcar "Ativo" com URL inválida,
+                    o callback fica desativado até corrigir a URL.
+                </p>
+
+                <?php if (!empty($companiesWithoutKey)): ?>
+                    <!-- Gerar chave de API para uma empresa. Ação pontual (cria um
+                         registro), então usa um form PRÓPRIO. Como HTML não permite
+                         form dentro de form, os campos ficam aqui visualmente mas se
+                         ligam ao form externo #genApiKeyForm via atributo form=. -->
+                    <hr class="my-3">
+                    <div class="fw-medium small mb-2"><i class="bi bi-key"></i> Gerar chave de API de empresa</div>
+                    <p class="text-muted small mb-2">
+                        Gere a chave de uma empresa que ainda não tem. Depois de gerada, ela aparece na tabela acima,
+                        onde você configura o callback e salva com o botão "Salvar Configurações".
+                    </p>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddApiKey"
+                        onclick="document.getElementById('addApiKeyRow').style.display='flex'; this.style.display='none';">
+                        <i class="bi bi-plus-lg"></i> Empresa key
+                    </button>
+                    <div id="addApiKeyRow" class="row g-2 align-items-end mt-1" style="display:none;">
+                        <div class="col-md-6">
+                            <label class="form-label small mb-1">Empresa</label>
+                            <select name="company_id" form="genApiKeyForm" class="form-select form-select-sm" required>
+                                <option value="">Selecione a empresa...</option>
+                                <?php foreach ($companiesWithoutKey as $comp): ?>
+                                    <option value="<?= (int)$comp['id'] ?>"><?= escape($comp['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" form="genApiKeyForm" class="btn btn-sm btn-primary w-100"><i class="bi bi-key"></i> Gerar chave</button>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-sm btn-outline-secondary w-100"
+                                onclick="document.getElementById('addApiKeyRow').style.display='none'; document.getElementById('btnAddApiKey').style.display='inline-block';">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+        <?php if (false): ?>
+        <!-- ============================================================= -->
+        <!-- Integrações da esteira comercial (ClickSign, Asaas, LRV Cloud) -->
+        <!-- Cada card tem um botão (?) que abre um guia passo a passo.     -->
+        <!-- ============================================================= -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <h6 class="mb-0" style="font-size:0.9rem"><i class="bi bi-plug"></i> Integrações da esteira comercial</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Chaves e webhooks das plataformas usadas na esteira (proposta → contrato → financeiro → provisionamento). Clique no <i class="bi bi-question-circle"></i> de cada bloco para ver o passo a passo de onde pegar cada valor. Tudo é salvo no botão <strong>"Salvar Configurações"</strong> abaixo.</p>
+
+                <!-- ClickSign -->
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong class="small"><i class="bi bi-vector-pen"></i> ClickSign (assinatura de contrato)</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-bs-toggle="modal" data-bs-target="#helpClicksign" title="Como configurar">
+                            <i class="bi bi-question-circle"></i> Como configurar
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Access Token</label>
+                            <input type="password" name="clicksign_access_token" class="form-control form-control-sm" value="<?= escape($settings['clicksign_access_token'] ?? '') ?>" placeholder="token da conta ClickSign">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Webhook Secret (HMAC)</label>
+                            <input type="password" name="clicksign_webhook_secret" class="form-control form-control-sm" value="<?= escape($settings['clicksign_webhook_secret'] ?? '') ?>" placeholder="segredo p/ validar o webhook">
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="clicksign_sandbox" value="1" id="clicksign_sandbox" <?= (($settings['clicksign_sandbox'] ?? '') === '1') ? 'checked' : '' ?>>
+                                <label class="form-check-label small" for="clicksign_sandbox">Usar ambiente de testes (sandbox)</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">URL do webhook para colar no painel ClickSign: <code><?= escape(rtrim((string)($settings['app_public_url'] ?? baseUrl('')), '/')) ?>/contract/clicksignWebhook</code></small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asaas (3 contas) -->
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong class="small"><i class="bi bi-cash-coin"></i> Asaas (cobranças / financeiro)</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-bs-toggle="modal" data-bs-target="#helpAsaas" title="Como configurar">
+                            <i class="bi bi-question-circle"></i> Como configurar
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Token do webhook (validação)</label>
+                            <input type="password" name="asaas_webhook_token" class="form-control form-control-sm" value="<?= escape($settings['asaas_webhook_token'] ?? '') ?>" placeholder="token que você define e cola no Asaas">
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">As 3 contas Asaas (parcela/recorrente/outra) são cadastradas em <a href="<?= baseUrl('finance/accounts') ?>">Financeiro → Contas Asaas</a>, cada uma com seu próprio token. URL do webhook: <code><?= escape(rtrim((string)($settings['app_public_url'] ?? baseUrl('')), '/')) ?>/finance/asaasWebhook?token=SEU_TOKEN</code></small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LRV Cloud -->
+                <div class="border rounded p-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong class="small"><i class="bi bi-hdd-network"></i> LRV Cloud (provisionamento)</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-bs-toggle="modal" data-bs-target="#helpLrv" title="Como configurar">
+                            <i class="bi bi-question-circle"></i> Como configurar
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">API Key</label>
+                            <input type="password" name="lrv_cloud_api_key" class="form-control form-control-sm" value="<?= escape($settings['lrv_cloud_api_key'] ?? '') ?>" placeholder="lrv_live_... (ou lrv_test_ p/ sandbox)">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Webhook Secret (HMAC)</label>
+                            <input type="password" name="lrv_cloud_webhook_secret" class="form-control form-control-sm" value="<?= escape($settings['lrv_cloud_webhook_secret'] ?? '') ?>" placeholder="segredo exibido ao criar o webhook">
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">URL do webhook para o painel LRV Cloud: <code><?= escape(rtrim((string)($settings['app_public_url'] ?? baseUrl('')), '/')) ?>/provisioning/lrvWebhook?id=ID_DO_PROVISIONAMENTO</code></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <button type="submit" class="btn btn-primary px-4">
+            <i class="bi bi-check-lg"></i> Salvar Configurações
+        </button>
+    </form>
+
+    <?php // [helpdesk-brooks] bloco oculto: módulo desativado nesta instalação. Troque 'false' por 'true' para reexibir. ?>
+    <?php if (false): ?>
+    <!-- ===================== MODAIS DE AJUDA (passo a passo) ===================== -->
+    <!-- ClickSign -->
+    <div class="modal fade" id="helpClicksign" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title"><i class="bi bi-vector-pen"></i> Como configurar o ClickSign</h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body small">
+            <p class="fw-semibold mb-1">1. Onde pegar o Access Token</p>
+            <ol class="mb-3">
+              <li>Entre na sua conta ClickSign em <a href="https://app.clicksign.com" target="_blank" rel="noopener">app.clicksign.com</a> (ou <a href="https://sandbox.clicksign.com" target="_blank" rel="noopener">sandbox.clicksign.com</a> para testes).</li>
+              <li>No menu do seu perfil/empresa, vá em <strong>Configurações → API</strong> (ou "Integrações / Chaves de API").</li>
+              <li>Copie o <strong>Access Token</strong> e cole no campo <em>Access Token</em> aqui.</li>
+              <li>Se estiver usando a conta de testes, marque a caixa <em>"Usar ambiente de testes (sandbox)"</em>.</li>
+            </ol>
+            <p class="fw-semibold mb-1">2. Configurar o webhook (confirmação da assinatura)</p>
+            <ol class="mb-3">
+              <li>Ainda no painel ClickSign, vá em <strong>Configurações → Webhooks</strong>.</li>
+              <li>Em "URL", cole: <code id="cs-webhook-url"></code></li>
+              <li>Defina um <strong>segredo (secret)</strong> para o webhook e cole o MESMO valor no campo <em>Webhook Secret (HMAC)</em> aqui. É isso que valida que o aviso veio mesmo da ClickSign.</li>
+              <li>Ative os eventos de <strong>documento finalizado/assinado</strong> (close / auto_close).</li>
+            </ol>
+            <p class="fw-semibold mb-1">✅ O que fazer</p>
+            <ul class="mb-2">
+              <li>Testar primeiro no sandbox, com a caixa de testes marcada.</li>
+              <li>Guardar o Access Token com segurança (ele dá acesso à sua conta).</li>
+            </ul>
+            <p class="fw-semibold mb-1">⛔ O que NÃO fazer</p>
+            <ul class="mb-0">
+              <li>Não usar o token de produção enquanto estiver testando.</li>
+              <li>Não deixar o Webhook Secret em branco — sem ele, não dá para confiar na confirmação de assinatura.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Asaas -->
+    <div class="modal fade" id="helpAsaas" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title"><i class="bi bi-cash-coin"></i> Como configurar o Asaas</h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body small">
+            <p class="text-muted">A empresa usa <strong>3 contas Asaas</strong> (uma para parcelas, uma para recorrência, uma "outra"). Cada conta tem seu próprio token.</p>
+            <p class="fw-semibold mb-1">1. Onde pegar o token de cada conta</p>
+            <ol class="mb-3">
+              <li>Entre na conta Asaas em <a href="https://www.asaas.com" target="_blank" rel="noopener">asaas.com</a> (ou sandbox em <a href="https://sandbox.asaas.com" target="_blank" rel="noopener">sandbox.asaas.com</a>).</li>
+              <li>Vá em <strong>Minha Conta → Integrações → Chave de API (API Key)</strong>.</li>
+              <li>Copie a chave. <strong>Repita para cada uma das 3 contas.</strong></li>
+            </ol>
+            <p class="fw-semibold mb-1">2. Onde cadastrar as 3 contas aqui no sistema</p>
+            <ol class="mb-3">
+              <li>Vá em <a href="<?= baseUrl('finance/accounts') ?>">Financeiro → Contas Asaas</a>.</li>
+              <li>Crie uma conta por finalidade (parcela / recorrente / outra), colando o token de cada uma e marcando "sandbox" se for teste.</li>
+            </ol>
+            <p class="fw-semibold mb-1">3. Webhook (confirmação de pagamento)</p>
+            <ol class="mb-3">
+              <li>Defina um <strong>token</strong> qualquer (uma senha sua) e cole no campo <em>Token do webhook</em> aqui.</li>
+              <li>No painel Asaas de <strong>cada conta</strong>, vá em <strong>Integrações → Webhooks</strong> e cadastre a URL: <code id="asaas-webhook-url"></code></li>
+              <li>Ative os eventos de <strong>pagamento confirmado/recebido</strong> (PAYMENT_CONFIRMED, PAYMENT_RECEIVED).</li>
+            </ol>
+            <p class="fw-semibold mb-1">✅ O que fazer</p>
+            <ul class="mb-2">
+              <li>Usar o mesmo token do webhook nas 3 contas (fica mais simples).</li>
+              <li>Testar no sandbox antes de ligar em produção.</li>
+            </ul>
+            <p class="fw-semibold mb-1">⛔ O que NÃO fazer</p>
+            <ul class="mb-0">
+              <li>Não confundir o token da API (que fica em cada conta) com o token do webhook (que você define).</li>
+              <li>Não considerar um pagamento "pago" só porque a cobrança foi criada — o status real vem pelo webhook.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LRV Cloud -->
+    <div class="modal fade" id="helpLrv" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title"><i class="bi bi-hdd-network"></i> Como configurar o LRV Cloud</h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body small">
+            <p class="fw-semibold mb-1">1. Onde pegar a API Key</p>
+            <ol class="mb-3">
+              <li>Entre no painel do LRV Cloud em <a href="https://cloud.lrvweb.com.br" target="_blank" rel="noopener">cloud.lrvweb.com.br</a>.</li>
+              <li>Vá em <strong>Painel → API Keys → Criar</strong>.</li>
+              <li>Marque os escopos necessários: <code>clients.write</code>, <code>hosting.write</code>, <code>databases.write</code>, <code>applications.write</code>, <code>domains.write</code> (e os <code>.read</code> correspondentes).</li>
+              <li>Para testar, crie uma chave <code>lrv_test_</code> (sandbox); para valer, <code>lrv_live_</code>. Cole no campo <em>API Key</em> aqui.</li>
+            </ol>
+            <p class="fw-semibold mb-1">2. Configurar o webhook (status do provisionamento)</p>
+            <ol class="mb-3">
+              <li>No painel LRV Cloud, vá em <strong>Webhooks → Criar</strong>.</li>
+              <li>Em "URL", cole: <code id="lrv-webhook-url"></code> (troque <code>ID_DO_PROVISIONAMENTO</code> pelo id real quando aplicável, ou use um webhook por processo).</li>
+              <li>Ao criar, o painel mostra um <strong>secret UMA ÚNICA VEZ</strong> — copie e cole no campo <em>Webhook Secret (HMAC)</em> aqui.</li>
+              <li>Ative os eventos: <code>hosting.created</code>, <code>hosting.ready</code>, <code>application.installed</code>, <code>application.deployed</code>, <code>domain.added</code>.</li>
+            </ol>
+            <p class="fw-semibold mb-1">✅ O que fazer</p>
+            <ul class="mb-2">
+              <li>Começar com a chave de sandbox (<code>lrv_test_</code>): os writes são simulados e os reads retornam dados reais.</li>
+              <li>Guardar o Webhook Secret assim que aparecer (não dá para vê-lo de novo).</li>
+            </ul>
+            <p class="fw-semibold mb-1">⛔ O que NÃO fazer</p>
+            <ul class="mb-0">
+              <li>Não provisionar VPS de verdade com a chave de produção antes de validar o fluxo no sandbox.</li>
+              <li>Não dar escopos de escrita que você não vai usar (princípio do menor privilégio).</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Preenche as URLs de webhook dentro dos modais com a base pública real -->
+    <script>
+    (function () {
+        var base = '<?= escape(rtrim((string)($settings['app_public_url'] ?? baseUrl('')), '/')) ?>';
+        var set = function (id, path) { var el = document.getElementById(id); if (el) el.textContent = base + path; };
+        set('cs-webhook-url', '/contract/clicksignWebhook');
+        set('asaas-webhook-url', '/finance/asaasWebhook?token=SEU_TOKEN');
+        set('lrv-webhook-url', '/provisioning/lrvWebhook?id=ID_DO_PROVISIONAMENTO');
+    })();
+    </script>
+    <?php endif; ?>
+
+    <!-- Form real (vazio, sem campos visíveis) que recebe o submit de "Gerar
+         chave". Os campos acima se associam a ele via atributo form=, o que
+         evita aninhar um <form> dentro do form principal de Configurações. -->
+    <?php if (!empty($companiesWithoutKey)): ?>
+        <form id="genApiKeyForm" action="<?= baseUrl('settings/generateApiKey') ?>" method="POST" class="d-none"></form>
+    <?php endif; ?>
+
+</div>
+
+<script>
+// Consolida os dias da semana marcados no campo oculto antes de enviar o form.
+(function(){
+    const form = document.querySelector('form[action$="settings/save"]');
+    if (!form) return;
+    form.addEventListener('submit', function(){
+        const days = Array.from(document.querySelectorAll('input[name="booking_days[]"]:checked'))
+            .map(c => c.value);
+        const hidden = document.getElementById('booking_days_of_week');
+        if (hidden) hidden.value = days.join(',');
+    });
+})();
+
+// ===== Assinatura de e-mail por domínio (salva via AJAX, com upload de logo) =====
+function saveSignature(btn) {
+    const block = btn.closest('.sig-block');
+    const val = sel => { const el = block.querySelector(sel); return el ? el.value.trim() : ''; };
+    const domain = val('.sig-domain');
+    if (!domain) { alert('Informe o domínio.'); return; }
+
+    const fd = new FormData();
+    fd.append('sig_id', block.querySelector('.sig-id').value || '');
+    fd.append('domain', domain);
+    fd.append('company', val('.sig-company'));
+    fd.append('specialties', val('.sig-specialties'));
+    fd.append('contact_email', val('.sig-contact_email'));
+    fd.append('site', val('.sig-site'));
+    fd.append('tagline', val('.sig-tagline'));
+    fd.append('color', val('.sig-color') || '#00997D');
+    const activeEl = block.querySelector('.sig-active');
+    const active = activeEl ? (activeEl.type === 'checkbox' ? activeEl.checked : activeEl.value === '1') : true;
+    fd.append('is_active', active ? '1' : '0');
+    const fileEl = block.querySelector('.sig-logo');
+    if (fileEl && fileEl.files && fileEl.files[0]) fd.append('logo', fileEl.files[0]);
+
+    const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch('<?= baseUrl("settings/saveEmailSignature") ?>', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false; btn.innerHTML = orig;
+            if (d && d.error) { alert(d.error); return; }
+            location.reload(); // recarrega para mostrar a logo salva
+        })
+        .catch(() => { btn.disabled = false; btn.innerHTML = orig; alert('Erro ao salvar a assinatura.'); });
+}
+
+function deleteSignature(id) {
+    if (!confirm('Remover a assinatura deste domínio?')) return;
+    fetch('<?= baseUrl("settings/deleteEmailSignature/") ?>' + id, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json()).then(() => location.reload())
+        .catch(() => alert('Erro ao remover.'));
+}
+
+function testSmtp() {
+    const btn = event.target.closest('button');
+    const result = document.getElementById('smtp-test-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enviando...';
+    result.style.display = 'none';
+
+    fetch('<?= baseUrl("settings/testEmail") ?>', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            result.style.display = 'block';
+            if (data.success) {
+                result.className = 'mb-3 alert alert-success py-2';
+                result.innerHTML = '<small><i class="bi bi-check-circle"></i> ' + data.message + '</small>';
+            } else {
+                result.className = 'mb-3 alert alert-danger py-2';
+                result.innerHTML = '<small><i class="bi bi-x-circle"></i> ' + data.message + '</small>';
+            }
+        })
+        .catch(() => {
+            result.style.display = 'block';
+            result.className = 'mb-3 alert alert-danger py-2';
+            result.innerHTML = '<small>Erro na requisição.</small>';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send-check"></i> Testar';
+        });
+}
+
+function testWebhook() {
+    const btn = event.target.closest('button');
+    const result = document.getElementById('webhook-test-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enviando...';
+    result.style.display = 'none';
+
+    fetch('<?= baseUrl("settings/testWebhook") ?>', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            result.style.display = 'block';
+            if (data.success) {
+                result.className = 'mb-3 alert alert-success py-2';
+                result.innerHTML = '<small><i class="bi bi-check-circle"></i> ' + data.message + '</small>';
+            } else {
+                result.className = 'mb-3 alert alert-danger py-2';
+                result.innerHTML = '<small><i class="bi bi-x-circle"></i> ' + data.message + '</small>';
+            }
+        })
+        .catch(() => {
+            result.style.display = 'block';
+            result.className = 'mb-3 alert alert-danger py-2';
+            result.innerHTML = '<small>Erro na requisição.</small>';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send-check"></i> Testar';
+        });
+}
+</script>
+
+<?php require APP_PATH . '/views/layouts/footer.php'; ?>

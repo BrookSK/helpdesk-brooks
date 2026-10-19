@@ -1,0 +1,3288 @@
+<?php
+
+/**
+ * Engine ÚNICA de execução de sequências de follow-up.
+ * Usada por: sequências completas (editor visual) E follow-ups simples pós-envio
+ * manual (que geram uma sequência mínima). Não há engine duplicada.
+ *
+ * O grafo (graph JSON) tem o formato:
+ *   { "nodes": [ {id, type, data:{...}, next, nextYes, nextNo} ], "start": "<nodeId>" }
+ *
+ * Tipos de nó:
+ *   send   (data: subject, body)        → envia e-mail, avança para next
+ *   wait   (data: amount, unit)         → agenda next_run_at, avança para next
+ *   condition (data: kind: replied|opened|clicked) → ramifica nextYes/nextNo
+ *   tag    (data: label)                → adiciona tag, avança
+ *   score  (data: delta)                → altera score, avança
+ *   move   (data: column_id)            → move card do lead, avança
+ *   linkedin (data: action_type, objective, tone, cta, max_length, template_id, body)
+ *          → cria uma tarefa MANUAL (linkedin_tasks) com a mensagem preparada pela IA
+ *            e PAUSA o participante. Retomada por resumeAfterLinkedinTask ao "ENVIEI".
+ *   end                                 → finaliza participante
+ *
+ * Execução dirigida por cron (cron/runSequences): processa participantes com
+ * status=active e next_run_at <= agora, respeitando limites da sequência.
+ */
+class SequenceEngine
+{
+    private $db;
+
+    /**
+     * Buffer de e-mails por participante durante uma "passada" de execução.
+     * Blocos de e-mail executados em sequência (sem 'wait' entre eles) são
+     * agrupados e enviados como UM ÚNICO e-mail ao esvaziar (flush). Isso mantém
+     * os blocos separados no construtor, sem fusão hardcoded, e evita e-mails
+     * separados quando confirmação + agendamento saem no mesmo passo.
+     * O WhatsApp NÃO é bufferizado (mensagens separadas são naturais no chat).
+     */
+    private $emailBuffer = [];
+
+    public function __construct()
+    {
+        $this->db = Database::getInstance();
+    }
+
+    /**
+     * Enfileira um e-mail no buffer do participante (agrupa envios consecutivos).
+     * Retorna true (o envio real acontece no flushEmail).
+     */
+    private function bufferEmail($participant, $account, $to, $subject, $bodyHtml, $nodeId, $variant = null)
+    {
+        $pid = $participant['id'];
+        if (!isset($this->emailBuffer[$pid])) {
+            $this->emailBuffer[$pid] = [
+                'contact_id' => $participant['contact_id'],
+                'account' => $account,
+                'to' => $to,
+                'subjects' => [],
+                'parts' => [],
+                'nodes' => [],
+                'variant' => $variant,
+            ];
+        }
+        if ($subject !== null && trim($subject) !== '') $this->emailBuffer[$pid]['subjects'][] = $subject;
+        if ($variant && empty($this->emailBuffer[$pid]['variant'])) $this->emailBuffer[$pid]['variant'] = $variant;
+        $this->emailBuffer[$pid]['parts'][] = $bodyHtml;
+        $this->emailBuffer[$pid]['nodes'][] = $nodeId;
+        return true;
+    }
+
+    /**
+     * Envia o e-mail agrupado do participante (se houver) e limpa o buffer.
+     * Um único e-mail com todas as partes acumuladas na passada atual.
+     */
+    private function flushEmail($participantId)
+    {
+        if (empty($this->emailBuffer[$participantId])) return;
+        $buf = $this->emailBuffer[$participantId];
+        unset($this->emailBuffer[$participantId]);
+        if (empty($buf['parts'])) return;
+
+        $subject = $buf['subjects'][0] ?? 'ON Solutions Brasil';
+        $body = implode("\n", $buf['parts']); // partes já são blocos HTML (<p>...)
+
+        try {
+            (new EmailMessageService())->send([
+                'contact_id' => $buf['contact_id'],
+                'account' => $buf['account'],
+                'to' => $buf['to'],
+                'subject' => $subject,
+                'body_html' => $body,
+                'origin' => 'sequence',
+                'sequence_participant_id' => $participantId,
+                'node_id' => implode(',', $buf['nodes']),
+                'ab_variant' => $buf['variant'],
+                'add_signature' => true,
+            ]);
+
+            // Analytics (Camada 1): registra a mensagem enviada + garante o outcome.
+            try {
+                $part = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$participantId]);
+                $an = new ProspectingAnalytics();
+                $an->logMessage([
+                    'contact_id' => $buf['contact_id'],
+                    'sequence_id' => $part['sequence_id'] ?? null,
+                    'participant_id' => $participantId,
+                    'node_id' => implode(',', $buf['nodes']),
+                    'channel' => 'email',
+                    'ab_variant' => $buf['variant'],
+                    'subject' => $subject,
+                    'body' => $body,
+                ]);
+                if ($part) $an->markStage($part, 'sent');
+            } catch (\Throwable $e) { /* nunca quebra o envio */ }
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine flushEmail', ['participant' => $participantId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    // ============ Inscrição ============
+
+    /**
+     * Adiciona um Lead a uma sequência (idempotente por (sequence, contact)).
+     * @return array {success, participant_id, error}
+     */
+    public function enroll($sequenceId, $contactId, $userId = null, $forceRestart = false)
+    {
+        $seq = $this->db->fetch("SELECT * FROM email_sequences WHERE id = ?", [$sequenceId]);
+        if (!$seq || !$seq['is_active']) return ['success' => false, 'error' => 'Sequência inválida ou inativa.'];
+
+        $contact = $this->db->fetch("SELECT unsubscribed, email_bounced, lead_email, phone, linkedin_url FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$contact) return ['success' => false, 'error' => 'Lead não encontrado.'];
+        // Disparo MANUAL (forceRestart) ignora o opt-out: o operador está reinscrevendo
+        // deliberadamente (ex.: para testar o fluxo). Reativa o contato.
+        if (!empty($contact['unsubscribed'])) {
+            if (!$forceRestart) return ['success' => false, 'error' => 'Lead descadastrado.'];
+            $this->db->update('whatsapp_contacts', ['unsubscribed' => 0], 'id = ?', [$contactId]);
+            $contact['unsubscribed'] = 0;
+        }
+        // Defesa em profundidade: no disparo AUTOMÁTICO, quem tem a etiqueta
+        // "sem interesse" (mesmo sem o flag unsubscribed) não é inscrito. O
+        // operador pode forçar manualmente (forceRestart).
+        if (!$forceRestart && $this->hasNoInterestLabel($contactId)) {
+            return ['success' => false, 'error' => 'Lead marcado como sem interesse.'];
+        }
+
+        // Elegibilidade por CANAL da sequência (email / whatsapp / mixed).
+        // - email:    exige e-mail
+        // - whatsapp: exige telefone
+        // - mixed:    exige e-mail, telefone OU LinkedIn (prospecção híbrida)
+        $channel = $seq['channel_type'] ?? 'email';
+        $hasEmail = !empty($contact['lead_email']);
+        $hasPhone = !empty($contact['phone']);
+        $hasLinkedin = !empty($contact['linkedin_url']);
+        // A própria sequência pode revelar o telefone depois (bloco reveal_phone),
+        // então um lead sem telefone imediato ainda é elegível em whatsapp/mixed.
+        $willRevealPhone = $this->graphHasPhoneReveal($seq);
+        if ($channel === 'whatsapp' && !$hasPhone && !$willRevealPhone) {
+            return ['success' => false, 'error' => 'Lead sem telefone para sequência de WhatsApp.'];
+        }
+        if ($channel === 'mixed' && !$hasEmail && !$hasPhone && !$hasLinkedin && !$willRevealPhone) {
+            return ['success' => false, 'error' => 'Lead sem e-mail, telefone ou LinkedIn.'];
+        }
+        if ($channel === 'email' && !$hasEmail) {
+            return ['success' => false, 'error' => 'Lead sem e-mail cadastrado.'];
+        }
+
+        $existing = $this->db->fetch("SELECT * FROM sequence_participants WHERE sequence_id = ? AND contact_id = ?", [$sequenceId, $contactId]);
+        if ($existing) {
+            // Disparo automático não reinicia quem já está rodando. Disparo MANUAL
+            // (forceRestart) reinicia a cadência do zero mesmo que já esteja ativa.
+            if (!$forceRestart && in_array($existing['status'], ['active', 'paused'])) {
+                return ['success' => false, 'error' => 'Lead já está nesta sequência.'];
+            }
+            // Reinicia: volta ao começo do grafo e limpa travas de escuta/triagem.
+            // Só inclui as colunas que existem no banco (migrations 100/102 podem
+            // não ter sido aplicadas) — evita erro "Unknown column".
+            $reset = [
+                'status' => 'active', 'current_node' => null, 'next_run_at' => date('Y-m-d H:i:s'),
+                'stop_reason' => null, 'finished_at' => null,
+                // Reinicia o relógio: respostas ANTES do reinício não contam como
+                // resposta atual (evita triagem imediata por resposta de teste antigo).
+                'started_at' => date('Y-m-d H:i:s'),
+            ];
+            if ($this->participantHasColumn('reply_listen_until')) $reset['reply_listen_until'] = null;
+            if ($this->participantHasColumn('triaged_at'))         $reset['triaged_at'] = null;
+            if ($this->participantHasColumn('ai_agent_turns'))     $reset['ai_agent_turns'] = 0;
+            $this->db->update('sequence_participants', $reset, 'id = ?', [$existing['id']]);
+            $participantId = $existing['id'];
+        } else {
+            $participantId = $this->db->insert('sequence_participants', [
+                'sequence_id' => $sequenceId,
+                'contact_id' => $contactId,
+                'status' => 'active',
+                'current_node' => null,
+                'next_run_at' => date('Y-m-d H:i:s'), // pronto para rodar já
+                'added_by' => $userId,
+            ]);
+        }
+
+        (new LeadTimelineService())->add($contactId, 'sequence_start', 'Adicionado à sequência: ' . $seq['name'], ['sequence_id' => $sequenceId], $userId);
+
+        // Sequências de prospecção: garante o card no board "Prospecção Automática"
+        // e move o lead para "Em prospecção" ao iniciar a sequência.
+        if (stripos($seq['name'] ?? '', 'Apollo') !== false || stripos($seq['name'] ?? '', 'ON Solu') !== false) {
+            $this->ensureProspectingCard($contactId, $userId);
+            $col = $this->resolveMoveColumn($contactId, ['column_name' => 'Em prospecção']);
+            if ($col) $this->moveCard($contactId, $col);
+        }
+
+        return ['success' => true, 'participant_id' => $participantId];
+    }
+
+    /** Cria o card do lead na coluna "Novo" do board de Prospecção Automática, se faltar. */
+    private function ensureProspectingCard($contactId, $userId = null)
+    {
+        try {
+            $exists = $this->db->fetch("SELECT id FROM crm_cards WHERE contact_id = ? LIMIT 1", [$contactId]);
+            if ($exists) return;
+            $col = $this->db->fetch(
+                "SELECT col.id FROM crm_columns col
+                 JOIN crm_boards b ON col.board_id = b.id
+                 WHERE b.name = 'Prospecção Automática' AND col.name = 'Novo'
+                 ORDER BY col.position ASC LIMIT 1"
+            );
+            if (!$col) return;
+            $c = $this->db->fetch("SELECT contact_name, assigned_to FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+            (new CrmBoard())->createCard([
+                'column_id' => (int)$col['id'],
+                'title' => $c['contact_name'] ?: ('Lead #' . $contactId),
+                'contact_id' => $contactId,
+                'created_by' => $userId,
+                'assigned_to' => $c['assigned_to'] ?? $userId,
+            ]);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /**
+     * Ao detectar RESPOSTA do lead (e-mail ou WhatsApp), em vez de simplesmente
+     * encerrar, redireciona cada sequência ativa para o nó de TRIAGEM POR IA
+     * (type=ai), pulando as esperas restantes. A IA então decide interesse →
+     * agendamento, ou sem interesse → unsubscribe/encerramento.
+     *
+     * Se a sequência não tiver nó de IA, cai no comportamento antigo (encerra).
+     * Idempotente: se já está no nó de IA (ou depois dele), não reprocessa.
+     *
+     * @return int nº de participantes roteados para triagem
+     */
+    /**
+     * Varre os participantes ativos e, para cada lead que recebeu uma mensagem
+     * do próprio lead (WhatsApp from_me=0 ou e-mail inbound) após o último toque
+     * do sistema e que ainda não foi triado, encaminha para a triagem por IA.
+     *
+     * Isso complementa o webhook do WhatsApp (tempo real): assim uma resposta é
+     * sempre captada quando as sequências rodam (cron ou botão manual), mesmo que
+     * o webhook não tenha chegado.
+     */
+    public function detectRepliesForActive()
+    {
+        try {
+            $hasTriaged = $this->participantHasColumn('triaged_at');
+            $hasListen = $this->participantHasColumn('reply_listen_until');
+
+            $sel = "sp.id, sp.contact_id, sp.started_at";
+            if ($hasTriaged) $sel .= ", sp.triaged_at";
+            if ($hasListen) $sel .= ", sp.reply_listen_until";
+
+            $parts = $this->db->fetchAll(
+                "SELECT $sel FROM sequence_participants sp
+                 JOIN email_sequences s ON s.id = sp.sequence_id
+                 WHERE sp.status IN ('active','paused') AND s.is_active = 1"
+            );
+            if (empty($parts)) return 0;
+
+            $listenMin = max(0, (int)(Config::get('sequence_reply_listen_minutes') ?? 2));
+            $seen = [];
+            $routed = 0;
+            foreach ($parts as $p) {
+                $contactId = (int)$p['contact_id'];
+                if (isset($seen[$contactId])) continue;
+                // Já triado → não reprocessa.
+                if ($hasTriaged && !empty($p['triaged_at'])) { $seen[$contactId] = true; continue; }
+
+                // Instante em que a janela de escuta atual começou (reply_listen_until
+                // menos o tempo da janela). Se o lead mandou mensagem DEPOIS disso,
+                // reiniciamos a janela para reunir as mensagens picadas antes de triar.
+                $windowStartedAt = null;
+                if ($hasListen && !empty($p['reply_listen_until'])) {
+                    // +3s de tolerância para NÃO reabrir a janela por causa da mesma
+                    // mensagem que a abriu (evita loop). Só mensagens realmente novas contam.
+                    $windowStartedAt = date('Y-m-d H:i:s', strtotime($p['reply_listen_until']) - $listenMin * 60 + 3);
+                }
+
+                $ref = $windowStartedAt ?? ($p['started_at'] ?? null);
+                if ($this->contactRepliedSinceLastTouch($contactId, $ref)) {
+                    // Reabre/estende a janela (routeReplyToTriage reinicia para agora+2min).
+                    $this->routeReplyToTriage($contactId, 'replied');
+                    $routed++;
+                    $seen[$contactId] = true;
+                }
+            }
+            return $routed;
+        } catch (\Throwable $e) {
+            Logger::error('detectRepliesForActive', ['error' => $e->getMessage()]);
+            return 0;
+        }
+    }
+
+    /**
+     * Houve mensagem RECEBIDA do lead (WhatsApp from_me=0 ou e-mail inbound) após
+     * o último envio do sistema? Considera o maior entre started_at e o último
+     * toque de saída (e-mail/WhatsApp) como referência.
+     */
+    private function contactRepliedSinceLastTouch($contactId, $startedAt = null)
+    {
+        // Última saída do sistema por WhatsApp
+        $lastOutWa = $this->db->fetch(
+            "SELECT MAX(timestamp) t FROM whatsapp_messages WHERE contact_id = ? AND from_me = 1", [$contactId]);
+        // Última resposta recebida por WhatsApp
+        $lastInWa = $this->db->fetch(
+            "SELECT MAX(timestamp) t FROM whatsapp_messages WHERE contact_id = ? AND from_me = 0", [$contactId]);
+
+        $outTs = ($lastOutWa && $lastOutWa['t']) ? strtotime($lastOutWa['t']) : 0;
+        $startTs = $startedAt ? strtotime($startedAt) : 0;
+        $ref = max($outTs, $startTs);
+
+        if ($lastInWa && $lastInWa['t'] && strtotime($lastInWa['t']) >= $ref && strtotime($lastInWa['t']) > 0) {
+            return true;
+        }
+
+        // E-mail: resposta registrada posterior à referência. Considera tanto a
+        // marca replied_at (na outbound) quanto a linha inbound real (received_at),
+        // gravada pela detecção casada por cabeçalho.
+        try {
+            $lastReplyEmail = $this->db->fetch(
+                "SELECT MAX(COALESCE(received_at, replied_at)) t FROM email_messages
+                 WHERE contact_id = ? AND (replied_at IS NOT NULL OR direction='inbound')", [$contactId]);
+            if ($lastReplyEmail && $lastReplyEmail['t'] && strtotime($lastReplyEmail['t']) >= $ref) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            // Fallback p/ schema sem received_at.
+            try {
+                $lastReplyEmail = $this->db->fetch(
+                    "SELECT MAX(replied_at) t FROM email_messages WHERE contact_id = ? AND replied_at IS NOT NULL", [$contactId]);
+                if ($lastReplyEmail && $lastReplyEmail['t'] && strtotime($lastReplyEmail['t']) >= $ref) {
+                    return true;
+                }
+            } catch (\Throwable $e2) { /* coluna pode não existir */ }
+        }
+
+        return false;
+    }
+
+    public function routeReplyToTriage($contactId, $reason = 'replied')
+    {
+        $parts = $this->db->fetchAll(
+            "SELECT sp.* FROM sequence_participants sp
+             WHERE sp.contact_id = ? AND sp.status IN ('active','paused')",
+            [$contactId]
+        );
+        if (empty($parts)) return 0;
+
+        $listenMin = max(0, (int)(Config::get('sequence_reply_listen_minutes') ?? 2));
+        $now = time();
+        $opened = 0;
+
+        // A janela de escuta depende das colunas da migration 100. Se elas não
+        // existirem (ou o tempo for 0), roteamos DIRETO para a triagem — assim o
+        // recurso funciona mesmo sem a migration aplicada.
+        $canListen = $listenMin > 0
+            && $this->participantHasColumn('reply_listen_until')
+            && $this->participantHasColumn('triaged_at');
+        $hasTriaged = $this->participantHasColumn('triaged_at');
+        $hasListen = $this->participantHasColumn('reply_listen_until');
+
+        foreach ($parts as $p) {
+            // Anti-duplicação: já triado → ignora respostas subsequentes.
+            if ($hasTriaged && !empty($p['triaged_at'])) continue;
+
+            if ($canListen) {
+                // Abre OU REINICIA a janela de escuta a cada nova mensagem do lead:
+                // a triagem só acontece 2 min APÓS A ÚLTIMA mensagem. Assim, quando o
+                // lead responde picado ("Sim, tenho interesse" / "Como funciona?" /
+                // "Tem material?"), reunimos tudo antes de classificar — evitando a
+                // interpretação errada por ler só a primeira mensagem.
+                $until = date('Y-m-d H:i:s', $now + $listenMin * 60);
+                $this->db->update('sequence_participants', [
+                    'status' => 'active',
+                    'reply_listen_until' => $until,
+                    'next_run_at' => $until, // acorda no fim da janela (recontada)
+                ], 'id = ?', [$p['id']]);
+            } else {
+                // Sem janela de escuta configurada: roteia imediatamente à triagem.
+                $this->finishListening($p);
+            }
+            $opened++;
+        }
+
+        if ($opened > 0) {
+            (new LeadTimelineService())->add($contactId, 'note',
+                'Resposta detectada — escutando por ' . $listenMin . ' min para reunir a mensagem completa antes de triar.',
+                ['reason' => $reason]);
+            if ($reason === 'replied') $this->onReplyMoveCard($contactId);
+
+            // Analytics (Camada 1): marca 'replied' e guarda a última resposta do lead.
+            try {
+                $an = new ProspectingAnalytics();
+                foreach ($parts as $p) {
+                    $rep = $this->lastLeadReply($contactId);
+                    $an->markStage($p, 'replied', [
+                        'replied_at' => date('Y-m-d H:i:s'),
+                        'reply_channel' => $rep['channel'],
+                        'reply_text' => $rep['text'],
+                    ]);
+                }
+            } catch (\Throwable $e) { /* silencioso */ }
+        }
+        return $opened;
+    }
+
+    /**
+     * Encerra a janela de escuta de um participante e o roteia para a triagem
+     * (saída "Resposta recebida"/nó de IA), UMA ÚNICA VEZ. Chamado pelo processDue
+     * quando reply_listen_until expira. Marca triaged_at para bloquear repetição.
+     * @return bool true se roteou/encerrou
+     */
+    private function finishListening($participant)
+    {
+        $hasTriaged = $this->participantHasColumn('triaged_at');
+        $hasListen = $this->participantHasColumn('reply_listen_until');
+
+        // Já triado? não repete.
+        if ($hasTriaged && !empty($participant['triaged_at'])) {
+            if ($hasListen) $this->db->update('sequence_participants', ['reply_listen_until' => null], 'id = ?', [$participant['id']]);
+            return false;
+        }
+
+        $seq = $this->db->fetch("SELECT graph FROM email_sequences WHERE id = ?", [$participant['sequence_id']]);
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        $nodesById = [];
+        foreach ($graph['nodes'] ?? [] as $n) $nodesById[$n['id']] = $n;
+
+        // Caso especial: o participante está preso no loop do "Atendente IA (FAQ)".
+        // Ao expirar a janela de escuta, ele deve REPROCESSAR o próprio nó ai_agent
+        // (interpretar as novas mensagens do lead), e NÃO ir para a triagem genérica.
+        // Não marca triaged_at — o loop precisa continuar reagindo a novas respostas.
+        $curNode = $participant['current_node'] ?? null;
+        $curType = $curNode && isset($nodesById[$curNode]) ? ($nodesById[$curNode]['type'] ?? '') : '';
+        $isFaqLoop = ($curType === 'ai_agent')
+            || ($curType === 'ai' && ($nodesById[$curNode]['data']['mode'] ?? '') === 'decision' && !empty($nodesById[$curNode]['data']['faq_active']));
+        if ($curNode && $isFaqLoop) {
+            $upd = [
+                'status' => 'active',
+                'current_node' => $curNode,
+                'next_run_at' => date('Y-m-d H:i:s'),
+            ];
+            if ($hasListen) $upd['reply_listen_until'] = null;
+            $this->db->update('sequence_participants', $upd, 'id = ?', [$participant['id']]);
+            return true;
+        }
+
+        // Destino: nextReply do nó atual → qualquer nextReply → primeiro nó de IA.
+        $target = null;
+        $curId = $participant['current_node'] ?? ($graph['start'] ?? null);
+        if ($curId && isset($nodesById[$curId]) && !empty($nodesById[$curId]['nextReply'])) {
+            $target = $nodesById[$curId]['nextReply'];
+        }
+        if (!$target) { foreach ($nodesById as $n) { if (!empty($n['nextReply'])) { $target = $n['nextReply']; break; } } }
+        if (!$target) { foreach ($nodesById as $n) { if (($n['type'] ?? '') === 'ai') { $target = $n['id']; break; } } }
+
+        // Marca como triado (lock anti-duplicação) e fecha a janela.
+        if ($target && isset($nodesById[$target])) {
+            $upd = [
+                'status' => 'active',
+                'current_node' => $target,
+                'next_run_at' => date('Y-m-d H:i:s'),
+            ];
+            if ($hasListen) $upd['reply_listen_until'] = null;
+            if ($hasTriaged) $upd['triaged_at'] = date('Y-m-d H:i:s');
+            $this->db->update('sequence_participants', $upd, 'id = ?', [$participant['id']]);
+            (new LeadTimelineService())->add($participant['contact_id'], 'note', 'Janela de escuta encerrada — encaminhado para triagem por IA.', []);
+            return true;
+        }
+
+        // Sem destino de triagem: encerra a sequência (comportamento antigo).
+        $endUpd = [
+            'status' => 'stopped', 'stop_reason' => 'replied',
+            'finished_at' => date('Y-m-d H:i:s'), 'next_run_at' => null,
+        ];
+        if ($hasListen) $endUpd['reply_listen_until'] = null;
+        if ($hasTriaged) $endUpd['triaged_at'] = date('Y-m-d H:i:s');
+        $this->db->update('sequence_participants', $endUpd, 'id = ?', [$participant['id']]);
+        return true;
+    }
+
+    /** Interrompe todas as sequências ativas de um lead (resposta, bounce, unsub, manual). */
+    public function stopForContact($contactId, $reason = 'manual')
+    {
+        $parts = $this->db->fetchAll(
+            "SELECT id, sequence_id FROM sequence_participants WHERE contact_id = ? AND status IN ('active','paused')",
+            [$contactId]
+        );
+        foreach ($parts as $p) {
+            $this->db->update('sequence_participants', [
+                'status' => 'stopped', 'stop_reason' => $reason, 'finished_at' => date('Y-m-d H:i:s'), 'next_run_at' => null,
+            ], 'id = ?', [$p['id']]);
+        }
+        if (!empty($parts)) {
+            (new LeadTimelineService())->add($contactId, 'sequence_stop', 'Sequência(s) interrompida(s) — ' . $reason, ['reason' => $reason]);
+            // Ao RESPONDER, move o card para a coluna "Respondeu" (quando definida na
+            // campanha de prospecção que originou este lead). Aplica também etiqueta.
+            if ($reason === 'replied') {
+                $this->onReplyMoveCard($contactId);
+            }
+        }
+        return count($parts);
+    }
+
+    /**
+     * Move o card do lead para a coluna "Respondeu" da campanha de prospecção
+     * associada (se houver) e aplica a etiqueta correspondente. Silencioso se não
+     * houver campanha/coluna configurada.
+     */
+    private function onReplyMoveCard($contactId)
+    {
+        try {
+            // Coluna "Respondeu" do board da campanha que captou este lead.
+            $col = $this->db->fetch(
+                "SELECT col.id
+                 FROM apollo_leads al
+                 JOIN apollo_campaigns c ON c.id = (
+                     SELECT campaign_id FROM apollo_prospecting_log l
+                     WHERE l.contact_id = ? AND l.campaign_id IS NOT NULL
+                     ORDER BY l.id DESC LIMIT 1
+                 )
+                 JOIN crm_columns col ON col.board_id = c.board_id AND col.name = 'Respondeu'
+                 WHERE al.contact_id = ?
+                 LIMIT 1",
+                [$contactId, $contactId]
+            );
+            // Fallback: qualquer coluna 'Respondeu' de board de prospecção do lead
+            if (!$col) {
+                $col = $this->db->fetch(
+                    "SELECT col.id
+                     FROM crm_cards cc
+                     JOIN crm_columns cur ON cc.column_id = cur.id
+                     JOIN crm_columns col ON col.board_id = cur.board_id AND col.name = 'Respondeu'
+                     WHERE cc.contact_id = ?
+                     ORDER BY cc.id DESC LIMIT 1",
+                    [$contactId]
+                );
+            }
+            if ($col && !empty($col['id'])) {
+                $this->moveCard($contactId, (int)$col['id']);
+            }
+        } catch (\Throwable $e) {
+            Logger::error('onReplyMoveCard', ['contact' => $contactId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    // ============ Execução (chamada pelo cron) ============
+
+    /**
+     * Processa os participantes prontos (next_run_at <= agora), respeitando limites.
+     * @param bool $manualForce Disparo MANUAL (botão "Executar campanha"): ignora
+     *        APENAS a janela de horário/fim de semana do envio, para que a ação
+     *        intencional do usuário execute o bloco agora. O limite diário e demais
+     *        regras permanecem. Default false = comportamento idêntico ao do cron.
+     * @param array|null $details Se um array for passado por referência, recebe uma
+     *        linha LEGÍVEL por participante processado (nome, o que aconteceu, etapa
+     *        atual, status e "aguardar até"). Só é usado no disparo manual — quando
+     *        null (cron), o comportamento é idêntico ao de antes.
+     * @return array métricas da execução
+     */
+    public function processDue($maxBatch = 200, $sequenceId = null, $manualForce = false, &$details = null)
+    {
+        // Antes de processar, detecta respostas do lead (WhatsApp/e-mail) para os
+        // participantes ativos. O webhook do WhatsApp já dispara em tempo real, mas
+        // esta varredura garante a triagem mesmo se o webhook falhar ou se a
+        // execução for manual ("Processar sequências agora").
+        $this->detectRepliesForActive();
+
+        $collect = is_array($details); // coletor legível por participante (disparo manual)
+        $now = date('Y-m-d H:i:s');
+        // Filtro opcional por sequência: sem $sequenceId (default) o comportamento é
+        // idêntico ao do cron (todas as sequências ativas). Com $sequenceId, processa
+        // SOMENTE os participantes elegíveis daquela sequência — mesmo motor/step().
+        $params = [$now];
+        $seqFilter = '';
+        if ($sequenceId !== null) {
+            $seqFilter = ' AND sp.sequence_id = ?';
+            $params[] = (int) $sequenceId;
+        }
+        $due = $this->db->fetchAll(
+            "SELECT sp.* FROM sequence_participants sp
+             JOIN email_sequences s ON s.id = sp.sequence_id
+             WHERE sp.status = 'active' AND s.is_active = 1
+               AND sp.next_run_at IS NOT NULL AND sp.next_run_at <= ?" . $seqFilter . "
+             ORDER BY sp.next_run_at ASC
+             LIMIT " . (int) $maxBatch,
+            $params
+        );
+
+        $stats = ['processed' => 0, 'sent' => 0, 'finished' => 0, 'skipped' => 0, 'errors' => 0];
+        $sentByAccount = []; // controle de limite diário por sequência
+        $maxStepsPerParticipant = 50; // trava de segurança contra loops no grafo
+
+        foreach ($due as $p) {
+            // Janela de escuta expirada: encerra a escuta e roteia à triagem uma
+            // única vez (anti-duplicação via triaged_at). Depois segue o fluxo.
+            if (!empty($p['reply_listen_until']) && strtotime($p['reply_listen_until']) <= time()) {
+                $this->finishListening($p);
+                $p = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$p['id']]);
+                if (!$p || $p['status'] !== 'active') continue;
+            }
+
+            // Drena os nós INSTANTÂNEOS do participante numa mesma passada:
+            // reveal/condição/tag/score/move/whatsapp/send avançam para "agora",
+            // então continuamos executando até bater num 'wait' (agenda futuro),
+            // finalizar, pular por janela/limite, ou atingir a trava de segurança.
+            $current = $p;
+            $stepResults = []; // resultados dos passos deste participante (para o coletor legível)
+            for ($i = 0; $i < $maxStepsPerParticipant; $i++) {
+                try {
+                    $r = $this->step($current, $sentByAccount, false, $manualForce);
+                    $stats['processed']++;
+                    if ($r === 'sent') $stats['sent']++;
+                    elseif ($r === 'finished') $stats['finished']++;
+                    elseif ($r === 'skipped') $stats['skipped']++;
+                    $stepResults[] = $r;
+                } catch (\Throwable $e) {
+                    $stats['errors']++;
+                    $stepResults[] = 'error';
+                    Logger::error('SequenceEngine step', ['participant' => $current['id'], 'error' => $e->getMessage()]);
+                    $this->db->update('sequence_participants', ['status' => 'failed', 'stop_reason' => 'error'], 'id = ?', [$current['id']]);
+                    break;
+                }
+
+                if ($r === 'finished') break;
+
+                // Recarrega o participante para ver o estado após o passo
+                $current = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$p['id']]);
+                if (!$current || $current['status'] !== 'active') break;
+                // Se o próximo passo está agendado para o futuro (wait) ou foi
+                // reagendado (fora de janela / limite diário), para por aqui.
+                if (empty($current['next_run_at']) || strtotime($current['next_run_at']) > time()) break;
+            }
+            // Fim da passada deste participante: envia o e-mail agrupado (se houver).
+            $this->flushEmail($p['id']);
+
+            // Coletor legível (disparo manual): registra o que aconteceu com este lead.
+            if ($collect) {
+                $details[] = $this->summarizeRun($p['id'], $stepResults);
+            }
+        }
+        return $stats;
+    }
+
+    /**
+     * MODO TESTE: executa o fluxo inteiro do participante de uma vez, pulando as
+     * esperas (wait) e ignorando janela/limite de envio. Registra cada etapa nos
+     * logs (sequence_executions). Retorna as etapas executadas.
+     */
+    public function runTest($participantId, $maxSteps = 40)
+    {
+        $p = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$participantId]);
+        if (!$p) return ['error' => 'Participante não encontrado.'];
+
+        // Reativa e volta ao início para um teste limpo
+        $this->db->update('sequence_participants', [
+            'status' => 'active', 'current_node' => null, 'next_run_at' => date('Y-m-d H:i:s'),
+            'stop_reason' => null, 'finished_at' => null, 'ab_variant' => null,
+        ], 'id = ?', [$participantId]);
+
+        // Modo teste: remove bloqueios de descadastro/bounce do contato para não
+        // interromper o teste logo no início (dado real de opt-out é preservado em produção).
+        $this->db->update('whatsapp_contacts', ['unsubscribed' => 0, 'email_bounced' => 0], 'id = ?', [$p['contact_id']]);
+
+        $steps = [];
+        $sentByAccount = [];
+        // Resolve o start do grafo para rotular o primeiro passo corretamente
+        $seqRow = $this->db->fetch("SELECT graph FROM email_sequences WHERE id = ?", [$p['sequence_id']]);
+        $graph0 = json_decode($seqRow['graph'] ?? '{}', true);
+        $startNode = $graph0['start'] ?? ($graph0['nodes'][0]['id'] ?? null);
+
+        for ($i = 0; $i < $maxSteps; $i++) {
+            $p = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$participantId]);
+            if (!$p || $p['status'] !== 'active') break;
+            $nodeBefore = $p['current_node'] ?: $startNode;
+            try {
+                $r = $this->step($p, $sentByAccount, true); // testMode = true
+                $steps[] = ['node' => $nodeBefore, 'result' => $r];
+                if ($r === 'finished') break;
+            } catch (\Throwable $e) {
+                Logger::error('SequenceEngine runTest', ['participant' => $participantId, 'error' => $e->getMessage()]);
+                $steps[] = ['error' => $e->getMessage()];
+                break;
+            }
+        }
+        // Envia o e-mail agrupado da passada de teste, se houver.
+        $this->flushEmail($participantId);
+        $final = $this->db->fetch("SELECT status, stop_reason, ab_variant FROM sequence_participants WHERE id = ?", [$participantId]);
+        return ['success' => true, 'steps' => $steps, 'final' => $final];
+    }
+
+    /**
+     * Reexecuta APENAS um nó específico de um participante, isoladamente, sem
+     * alterar o current_node/next_run_at nem avançar o fluxo. Serve para
+     * testar/forçar uma etapa (ex: reenviar o WhatsApp que falhou) sem refazer
+     * a sequência inteira. Ignora janela/limite diário.
+     * @return array {success, result, detail}
+     */
+    public function runSingleNode($participantId, $nodeId)
+    {
+        $participant = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$participantId]);
+        if (!$participant) return ['success' => false, 'error' => 'Participante não encontrado.'];
+
+        $seq = $this->db->fetch("SELECT * FROM email_sequences WHERE id = ?", [$participant['sequence_id']]);
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        $nodes = [];
+        foreach (($graph['nodes'] ?? []) as $n) $nodes[$n['id']] = $n;
+        if (!isset($nodes[$nodeId])) return ['success' => false, 'error' => 'Etapa não existe mais no fluxo.'];
+
+        $node = $nodes[$nodeId];
+        $type = $node['type'];
+        $contactId = $participant['contact_id'];
+        $result = 'done';
+        $detail = null;
+
+        try {
+            switch ($type) {
+                case 'send':
+                    $r = $this->doSend($participant, $seq, $node, true); // testMode: ignora janela/limite
+                    $result = ($r === true) ? 'done' : 'failed';
+                    $detail = is_string($r) ? $r : null;
+                    break;
+                case 'whatsapp':
+                    $r = $this->doWhatsapp($participant, $node);
+                    $result = ($r === true) ? 'done' : 'failed';
+                    $detail = is_string($r) ? $r : null;
+                    break;
+                case 'reveal_phone':
+                    $this->doReveal($participant, $node['data'] ?? []);
+                    $detail = 'Reveal solicitado/verificado.';
+                    break;
+                case 'condition':
+                    $ok = $this->evalCondition($node['data']['kind'] ?? 'replied', $contactId, $participant);
+                    $detail = 'Condição avaliada: ' . ($ok ? 'SIM' : 'NÃO');
+                    break;
+                case 'tag':
+                    $label = trim($node['data']['label'] ?? '');
+                    if ($label) { $this->applyLabel($contactId, $label, $node['data']['color'] ?? null); $detail = 'Etiqueta: ' . $label; }
+                    break;
+                case 'score':
+                    $delta = (int) ($node['data']['delta'] ?? 0);
+                    if ($delta) (new LeadScoreService())->add($contactId, $delta, 'sequência (teste)');
+                    $detail = 'Score ' . ($delta > 0 ? '+' : '') . $delta;
+                    break;
+                case 'ai':
+                    $ai = $this->doAi($participant, $node);
+                    if (($node['data']['mode'] ?? 'simple') === 'decision') {
+                        $detail = 'IA decidiu: ' . (!empty($ai['decision']) ? 'SIM' : 'NÃO') . '. ' . ($ai['detail'] ?? '');
+                    } else {
+                        $detail = 'IA: ' . ($ai['detail'] ?? '');
+                    }
+                    if (!empty($ai['error'])) $result = 'failed';
+                    break;
+                case 'move':
+                    $columnId = $this->resolveMoveColumn($contactId, $node['data'] ?? []);
+                    if ($columnId) $this->moveCard($contactId, $columnId);
+                    $detail = 'Card movido.';
+                    break;
+                case 'unsubscribe':
+                    $this->unsubscribeContact($contactId, $node['data']['reason'] ?? 'Sem interesse (sequência)');
+                    $detail = 'Lead removido da lista (descadastrado).';
+                    break;
+                case 'schedule':
+                    $sch = $this->doSchedule($participant, $node);
+                    $detail = $sch['detail'] ?? 'Link de agendamento enviado.';
+                    if (!empty($sch['error'])) $result = 'failed';
+                    break;
+                case 'connect':
+                    $conn = $this->doConnect($participant, $node);
+                    $detail = $conn['detail'] ?? 'Conectado à sequência.';
+                    if (!empty($conn['error'])) $result = 'failed';
+                    break;
+                case 'reply':
+                    $rep = $this->doReply($participant, $node);
+                    $detail = $rep['detail'] ?? 'Resposta enviada.';
+                    if (!empty($rep['error'])) $result = 'failed';
+                    break;
+                case 'ai_agent':
+                    $ag = $this->doAiAgent($participant, $node);
+                    $detail = 'Atendente IA · intenção: ' . ($ag['intent'] ?? 'unclear') . '. ' . ($ag['detail'] ?? '');
+                    if (!empty($ag['error'])) $result = 'failed';
+                    break;
+                case 'wait':
+                    $detail = 'Aguardar (sem efeito no teste isolado).';
+                    break;
+                case 'end':
+                    $detail = 'Encerrar (sem efeito no teste isolado).';
+                    break;
+                default:
+                    $detail = 'Tipo sem ação de teste.';
+            }
+        } catch (\Throwable $e) {
+            $result = 'failed';
+            $detail = 'Erro: ' . $e->getMessage();
+            Logger::error('SequenceEngine runSingleNode', ['participant' => $participantId, 'node' => $nodeId, 'error' => $e->getMessage()]);
+        }
+
+        // Registra a reexecução no log (aparece na aba "Etapas executadas")
+        $this->logExec($participantId, $nodeId, $type, $result, $detail);
+        return ['success' => true, 'result' => $result, 'detail' => $detail, 'node_type' => $type];
+    }
+
+    /**
+     * Executa um passo do participante (um nó). $testMode pula esperas/janela.
+     * $manualForce (disparo manual) ignora SOMENTE a janela de horário/fim de semana
+     * do envio — o limite diário e as demais regras seguem valendo.
+     */
+    private function step($participant, &$sentByAccount, $testMode = false, $manualForce = false)
+    {
+        $seq = $this->db->fetch("SELECT * FROM email_sequences WHERE id = ?", [$participant['sequence_id']]);
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        if (empty($graph['nodes'])) { $this->finish($participant, 'completed'); return 'finished'; }
+
+        $nodes = [];
+        foreach ($graph['nodes'] as $n) $nodes[$n['id']] = $n;
+
+        // Nó atual: se null, começa pelo start
+        $nodeId = $participant['current_node'] ?: ($graph['start'] ?? ($graph['nodes'][0]['id'] ?? null));
+        if (!$nodeId || !isset($nodes[$nodeId])) { $this->finish($participant, 'completed'); return 'finished'; }
+
+        // Revalida: lead respondeu/descadastrou/bounce? interrompe
+        $contact = $this->db->fetch("SELECT unsubscribed, email_bounced FROM whatsapp_contacts WHERE id = ?", [$participant['contact_id']]);
+        if ($contact && (!empty($contact['unsubscribed']) || !empty($contact['email_bounced']))) {
+            $this->finish($participant, !empty($contact['unsubscribed']) ? 'unsubscribed' : 'bounce');
+            return 'skipped';
+        }
+
+        $node = $nodes[$nodeId];
+        $type = $node['type'];
+        $contactId = $participant['contact_id'];
+
+        switch ($type) {
+            case 'send':
+                // Canal ausente no lead: pula o bloco (não finaliza a sequência).
+                // Ex.: sequência mista onde este lead só tem telefone → pula o e-mail.
+                if (!$this->contactHasChannel($contactId, 'email')) {
+                    $this->advance($participant, $node['next'] ?? null, $nodes);
+                    $this->logExec($participant['id'], $nodeId, $type, 'skipped', 'Lead sem e-mail: bloco de e-mail pulado.');
+                    return 'skipped';
+                }
+                // Respeita janela de horário e limite diário (ignorado no modo teste)
+                if (!$testMode) {
+                    // Disparo MANUAL ("Executar campanha") ignora APENAS a janela de
+                    // horário/fim de semana — a ação é intencional do usuário. O cron
+                    // (manualForce=false) mantém a janela como sempre.
+                    if (!$manualForce && !$this->withinWindow($seq)) { $this->reschedule($participant, $this->nextWindowStart($seq)); return 'skipped'; }
+                    $key = $seq['id'];
+                    $sentByAccount[$key] = ($sentByAccount[$key] ?? 0);
+                    if ($this->sentToday($seq['id']) + $sentByAccount[$key] >= (int) $seq['daily_limit']) {
+                        $this->reschedule($participant, date('Y-m-d H:i:s', strtotime('+1 hour')));
+                        return 'skipped';
+                    }
+                    $sentByAccount[$key] = ($sentByAccount[$key] ?? 0) + 1;
+                }
+                $sendResult = $this->doSend($participant, $seq, $node, $testMode);
+                // Se o envio abortou por config (sem conta/e-mail) fora do teste, o
+                // participante já foi finalizado; no teste seguimos para ver o fluxo.
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, $sendResult === true ? 'done' : 'failed', is_string($sendResult) ? $sendResult : null);
+                return 'sent';
+
+            case 'reveal_phone':
+                // Reveal PROGRESSIVO: revela só os dados marcados (telefone e/ou e-mail)
+                // que ainda faltam no lead. Economiza créditos.
+                $this->doReveal($participant, $node['data'] ?? []);
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'whatsapp':
+                // Canal ausente no lead: pula o bloco (não finaliza a sequência).
+                if (!$this->contactHasChannel($contactId, 'whatsapp')) {
+                    $this->advance($participant, $node['next'] ?? null, $nodes);
+                    $this->logExec($participant['id'], $nodeId, $type, 'skipped', 'Lead sem telefone: bloco de WhatsApp pulado.');
+                    return 'skipped';
+                }
+                // Respeita a janela de horário/dias (bug: WhatsApp saía de madrugada
+                // e fim de semana). Fora da janela → reagenda p/ próximo horário válido.
+                if (!$this->enforceWindow($participant, $seq, $testMode, $manualForce)) {
+                    $this->logExec($participant['id'], $nodeId, $type, 'skipped', 'Fora da janela de envio: reagendado para o próximo horário permitido.');
+                    return 'skipped';
+                }
+                // Teto diário compartilhado (e-mail + WhatsApp): não estoura o daily_limit.
+                if (!$testMode) {
+                    $key = $seq['id'];
+                    $sentByAccount[$key] = ($sentByAccount[$key] ?? 0);
+                    if ($this->sentToday($seq['id']) + $sentByAccount[$key] >= (int) $seq['daily_limit']) {
+                        $this->reschedule($participant, date('Y-m-d H:i:s', strtotime('+1 hour')));
+                        $this->logExec($participant['id'], $nodeId, $type, 'skipped', 'Limite diário atingido: reagendado.');
+                        return 'skipped';
+                    }
+                    $sentByAccount[$key] = ($sentByAccount[$key] ?? 0) + 1;
+                }
+                $waResult = $this->doWhatsapp($participant, $node);
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, $waResult === true ? 'done' : 'failed', is_string($waResult) ? $waResult : null);
+                return 'sent';
+
+            case 'wait':
+                // Modo teste: pula a espera e segue imediatamente
+                $secs = $testMode ? 0 : $this->waitSeconds($node['data'] ?? []);
+                $this->db->update('sequence_participants', [
+                    'current_node' => $node['next'] ?? null,
+                    'next_run_at' => date('Y-m-d H:i:s', time() + $secs),
+                ], 'id = ?', [$participant['id']]);
+                if (empty($node['next'])) $this->finish($participant, 'completed');
+                $this->logExec($participant['id'], $nodeId, $type, 'waiting');
+                return 'skipped';
+
+            case 'condition':
+                $branch = $this->evalCondition($node['data']['kind'] ?? 'replied', $contactId, $participant) ? ($node['nextYes'] ?? null) : ($node['nextNo'] ?? null);
+                $this->advance($participant, $branch, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'ai':
+                $aiMode = $node['data']['mode'] ?? 'simple';
+                // Módulo ACOPLADO "Atendente de dúvidas": no modo decisão com
+                // faq_active, o bloco tira dúvidas do lead em loop (janela de
+                // escuta) até concluir SIM/NÃO. Reaproveita a lógica do doAiAgent.
+                if ($aiMode === 'decision' && !empty($node['data']['faq_active'])) {
+                    $ag = $this->doAiAgent($participant, $node);
+                    $intent = $ag['intent'] ?? 'unclear';
+                    // Falha TÉCNICA da IA não decide o lead: mantém no nó e
+                    // reprocessa depois (não encerra/tag nem agenda por erro nosso).
+                    if (!empty($ag['error'])) {
+                        $this->reschedule($participant, date('Y-m-d H:i:s', strtotime('+15 minutes')));
+                        $this->logExec($participant['id'], $nodeId, $type, 'failed', 'Erro técnico da IA — reprocessar: ' . ($ag['detail'] ?? ''));
+                        return 'skipped';
+                    }
+                    // Roteamento centralizado (SequenceAiRules): só interesse CLARO
+                    // agenda; recusa/indecisão/limite encerram com tag "sem interesse".
+                    $action = SequenceAiRules::agentAction(
+                        $intent, !empty($ag['active']), (int)($ag['turns'] ?? 0), (int)($ag['max_turns'] ?? 6));
+                    if ($action === SequenceAiRules::ACTION_ADVANCE_YES) {
+                        $this->advance($participant, $node['nextYes'] ?? null, $nodes); $this->analyticsInterest($participant, true);
+                    } elseif ($action === SequenceAiRules::ACTION_ADVANCE_NO) {
+                        $this->advance($participant, $node['nextNo'] ?? null, $nodes); $this->analyticsInterest($participant, false);
+                        $this->markNegativeOutcome($participant['contact_id']);
+                    } else {
+                        // Ainda com dúvidas: respondeu e continua no ciclo, aguardando
+                        // a próxima mensagem do lead (janela de escuta).
+                        $listenMin = max(1, (int)(Config::get('sequence_reply_listen_minutes') ?? 2));
+                        $this->db->update('sequence_participants', [
+                            'current_node' => $nodeId,
+                            'reply_listen_until' => date('Y-m-d H:i:s', time() + $listenMin * 60),
+                            'next_run_at' => date('Y-m-d H:i:s', time() + $listenMin * 60),
+                        ], 'id = ?', [$participant['id']]);
+                    }
+                    $this->logExec($participant['id'], $nodeId, $type, empty($ag['error']) ? 'done' : 'failed', $ag['detail'] ?? null);
+                    return $action === SequenceAiRules::ACTION_LISTEN ? 'skipped' : 'sent';
+                }
+                $ai = $this->doAi($participant, $node);
+                if ($aiMode === 'decision') {
+                    // Falha TÉCNICA da IA (sem chave/HTTP/exception) NÃO decide o
+                    // lead: não é recusa nem interesse. Mantém no nó e reprocessa
+                    // no próximo ciclo (evita agendar ou encerrar por erro nosso).
+                    if (!empty($ai['error'])) {
+                        $this->reschedule($participant, date('Y-m-d H:i:s', strtotime('+15 minutes')));
+                        $this->logExec($participant['id'], $nodeId, $type, 'failed', 'Erro técnico da IA — reprocessar: ' . ($ai['detail'] ?? ''));
+                        return 'skipped';
+                    }
+                    // Ramifica conforme a decisão SIM/NÃO da IA.
+                    $action = SequenceAiRules::decisionAction(!empty($ai['decision']));
+                    $branch = $action === SequenceAiRules::ACTION_ADVANCE_YES ? ($node['nextYes'] ?? null) : ($node['nextNo'] ?? null);
+                    $this->advance($participant, $branch, $nodes);
+                    // Analytics: registra interesse classificado pela IA + objeção.
+                    $isNegative = ($action !== SequenceAiRules::ACTION_ADVANCE_YES);
+                    $this->analyticsInterest($participant, !$isNegative, $ai['detail'] ?? null);
+                    // Recusa da IA: move o card para "Sem Interesse" e marca perdido.
+                    if ($isNegative) $this->markNegativeOutcome($participant['contact_id']);
+                } else {
+                    $this->advance($participant, $node['next'] ?? null, $nodes);
+                }
+                $this->logExec($participant['id'], $nodeId, $type, empty($ai['error']) ? 'done' : 'failed', $ai['detail'] ?? null);
+                return 'skipped';
+
+            case 'tag':
+                $label = trim($node['data']['label'] ?? '');
+                if ($label) {
+                    $this->applyLabel($contactId, $label, $node['data']['color'] ?? null);
+                    (new LeadTimelineService())->add($contactId, 'tag', 'Etiqueta aplicada: ' . $label, ['tag' => $label]);
+                }
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'score':
+                $delta = (int) ($node['data']['delta'] ?? 0);
+                if ($delta) (new LeadScoreService())->add($contactId, $delta, 'sequência');
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'move':
+                $columnId = $this->resolveMoveColumn($contactId, $node['data'] ?? []);
+                if ($columnId) $this->moveCard($contactId, $columnId);
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'unsubscribe':
+                $this->unsubscribeContact($contactId, $node['data']['reason'] ?? 'Sem interesse (sequência)');
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'skipped';
+
+            case 'schedule':
+                // Envio de link de agendamento também respeita a janela.
+                if (!$this->enforceWindow($participant, $seq, $testMode, $manualForce)) {
+                    $this->logExec($participant['id'], $nodeId, $type, 'skipped', 'Fora da janela de envio: agendamento reagendado.');
+                    return 'skipped';
+                }
+                $sch = $this->doSchedule($participant, $node);
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, empty($sch['error']) ? 'done' : 'failed', $sch['detail'] ?? null);
+                return 'sent';
+
+            case 'connect':
+                $conn = $this->doConnect($participant, $node);
+                $this->logExec($participant['id'], $nodeId, $type, empty($conn['error']) ? 'done' : 'failed', $conn['detail'] ?? null);
+                // Se configurado para encerrar a atual, finaliza aqui; senão avança.
+                if (!empty($node['data']['stop_current'])) {
+                    $this->finish($participant, 'connected');
+                    return 'finished';
+                }
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                return 'skipped';
+
+            case 'reply':
+                $rep = $this->doReply($participant, $node);
+                $this->advance($participant, $node['next'] ?? null, $nodes);
+                $this->logExec($participant['id'], $nodeId, $type, empty($rep['error']) ? 'done' : 'failed', $rep['detail'] ?? null);
+                return 'sent';
+
+            case 'ai_agent':
+                $agentActive = !isset($node['data']['active']) || !empty($node['data']['active']);
+                $ag = $this->doAiAgent($participant, $node);
+                $intent = $ag['intent'] ?? 'unclear';
+                // Falha TÉCNICA da IA não decide o lead: mantém no nó e reprocessa
+                // depois (não encerra/tag nem agenda por erro nosso).
+                if (!empty($ag['error'])) {
+                    $this->reschedule($participant, date('Y-m-d H:i:s', strtotime('+15 minutes')));
+                    $this->logExec($participant['id'], $nodeId, $type, 'failed', 'Erro técnico da IA — reprocessar: ' . ($ag['detail'] ?? ''));
+                    return 'skipped';
+                }
+                // Roteamento centralizado (SequenceAiRules): só interesse CLARO
+                // agenda; recusa/indecisão/limite encerram com tag "sem interesse".
+                $action = SequenceAiRules::agentAction(
+                    $intent, $agentActive, (int)($ag['turns'] ?? 0), (int)($ag['max_turns'] ?? 6));
+                if ($action === SequenceAiRules::ACTION_ADVANCE_YES) {
+                    $this->advance($participant, $node['nextYes'] ?? null, $nodes);
+                } elseif ($action === SequenceAiRules::ACTION_ADVANCE_NO) {
+                    $this->advance($participant, $node['nextNo'] ?? null, $nodes);
+                    // Recusa explícita do lead: registra negativo, move o card para
+                    // "Sem Interesse" e marca o desfecho como perdido.
+                    $this->analyticsInterest($participant, false, $ag['detail'] ?? null);
+                    $this->markNegativeOutcome($participant['contact_id']);
+                } else {
+                    // Bloco ATIVO e intenção ainda não clara: respondeu a dúvida e
+                    // continua no ciclo, aguardando (janela de escuta) a próxima
+                    // mensagem do lead.
+                    $listenMin = max(1, (int)(Config::get('sequence_reply_listen_minutes') ?? 2));
+                    $this->db->update('sequence_participants', [
+                        'current_node' => $nodeId,               // permanece no mesmo bloco (loop)
+                        'reply_listen_until' => date('Y-m-d H:i:s', time() + $listenMin * 60),
+                        'next_run_at' => date('Y-m-d H:i:s', time() + $listenMin * 60),
+                    ], 'id = ?', [$participant['id']]);
+                }
+                $this->logExec($participant['id'], $nodeId, $type, empty($ag['error']) ? 'done' : 'failed', $ag['detail'] ?? null);
+                return $action === SequenceAiRules::ACTION_LISTEN ? 'skipped' : 'sent';
+
+            case 'linkedin':
+                // Etapa MANUAL assistida. NÃO envia nada: gera uma tarefa na fila
+                // "Minhas Ações" (com a mensagem preparada pela IA) e PAUSA o
+                // participante NESTE nó, aguardando o vendedor confirmar "ENVIEI".
+                // No modo teste, apenas registra e segue (não trava o teste).
+                $this->doLinkedin($participant, $seq, $node);
+                if ($testMode) {
+                    $this->advance($participant, $node['next'] ?? null, $nodes);
+                    $this->logExec($participant['id'], $nodeId, $type, 'done', 'Tarefa LinkedIn (teste): seguiria pausada em produção.');
+                    return 'skipped';
+                }
+                // Pausa: fixa o current_node neste nó e zera o next_run_at.
+                $this->db->update('sequence_participants', [
+                    'status' => 'paused', 'current_node' => $nodeId, 'next_run_at' => null,
+                ], 'id = ?', [$participant['id']]);
+                $this->logExec($participant['id'], $nodeId, $type, 'waiting', 'Tarefa LinkedIn criada — aguardando ação do vendedor.');
+                return 'skipped';
+
+            case 'end':
+            default:
+                $this->finish($participant, 'completed');
+                $this->logExec($participant['id'], $nodeId, $type, 'done');
+                return 'finished';
+        }
+    }
+
+    // ---- Ações de nó ----
+
+    private function doSend($participant, $seq, $node, $testMode = false)
+    {
+        $contactId = $participant['contact_id'];
+        $contact = $this->db->fetch("SELECT id, lead_email, contact_name, push_name, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (empty($contact['lead_email'])) {
+            if (!$testMode) $this->finish($participant, 'no_email');
+            return 'Lead sem e-mail cadastrado';
+        }
+
+        // Conta de envio: da sequência ou a primeira ativa
+        $account = $this->resolveAccount($seq['email_account_id']);
+        if (!$account) {
+            if (!$testMode) $this->finish($participant, 'no_account');
+            return 'Nenhuma conta de e-mail ativa configurada';
+        }
+
+        $data = $node['data'] ?? [];
+
+        // Fontes de conteúdo: texto inline OU template cadastrado (template_id / template_id_b).
+        $subjectSrc = $data['subject'] ?? '(sem assunto)';
+        $bodySrc = $data['body'] ?? '';
+        if (!empty($data['template_id'])) {
+            $tpl = $this->db->fetch("SELECT subject, body FROM message_templates WHERE id = ?", [(int)$data['template_id']]);
+            if ($tpl) { $subjectSrc = $tpl['subject'] ?: $subjectSrc; $bodySrc = $tpl['body']; }
+        }
+
+        // Teste A/B PERSISTENTE por participante: a variante é sorteada uma única vez
+        // (na primeira mensagem A/B) e gravada em sequence_participants.ab_variant.
+        $variant = null;
+        $abEnabled = !empty($data['ab_enabled']) || !empty($data['template_id_b']) || !empty($data['body_b']) || !empty($data['subject_b']);
+        if ($abEnabled) {
+            $variant = $participant['ab_variant'] ?? null;
+            if (!$variant) {
+                $variant = (random_int(0, 1) === 1) ? 'B' : 'A';
+                $this->db->update('sequence_participants', ['ab_variant' => $variant], 'id = ?', [$participant['id']]);
+                (new LeadTimelineService())->add($contactId, 'tag', 'Variante A/B atribuída: ' . $variant, ['ab_variant' => $variant]);
+            }
+            if ($variant === 'B') {
+                if (!empty($data['template_id_b'])) {
+                    $tplB = $this->db->fetch("SELECT subject, body FROM message_templates WHERE id = ?", [(int)$data['template_id_b']]);
+                    if ($tplB) { $subjectSrc = $tplB['subject'] ?: $subjectSrc; $bodySrc = $tplB['body']; }
+                } else {
+                    if (!empty($data['subject_b'])) $subjectSrc = $data['subject_b'];
+                    if (!empty($data['body_b'])) $bodySrc = $data['body_b'];
+                }
+            }
+        }
+
+        // Injeta o nome do remetente a partir da conta de envio (display_name).
+        // Assim {{remetente_nome}} reflete a conta configurada na sequência, não um valor global.
+        if (!empty($account['display_name'])) {
+            $contact['remetente_nome'] = $account['display_name'];
+        }
+
+        $subject = $this->render($subjectSrc, $contact);
+        $body = $this->render($bodySrc, $contact);
+
+        // Agrupa e-mails consecutivos num único envio (flush ao fim da passada).
+        // A assinatura é aplicada uma vez no flush (add_signature no send final).
+        $this->bufferEmail($participant, $account, $contact['lead_email'], $subject, $body, $node['id'], $variant);
+        return true;
+    }
+
+    private function doWhatsapp($participant, $node)
+    {
+        // Se havia e-mail agrupado pendente, envia-o antes de mudar de canal.
+        $this->flushEmail($participant['id']);
+
+        $contactId = $participant['contact_id'];
+        // Contexto base para os logs desta etapa (aparece no painel de logs do servidor).
+        $logCtx = ['step' => 'whatsapp', 'participant_id' => $participant['id'] ?? null, 'contact_id' => $contactId];
+        $contact = $this->db->fetch("SELECT id, phone, contact_name, push_name, lead_email FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (empty($contact['phone'])) {
+            (new LeadTimelineService())->add($contactId, 'note', 'WhatsApp da sequência não enviado: lead sem telefone.');
+            Logger::warning('SequenceEngine whatsapp impedido', $logCtx + ['reason' => 'Lead sem telefone']);
+            return 'Lead sem telefone';
+        }
+        $data = $node['data'] ?? [];
+        $bodySrc = $data['body'] ?? '';
+        if (!empty($data['template_id'])) {
+            $tpl = $this->db->fetch("SELECT body FROM message_templates WHERE id = ?", [(int)$data['template_id']]);
+            if ($tpl) $bodySrc = $tpl['body'];
+        }
+
+        // Teste A/B (WhatsApp): mesma variante persistente do participante. Sorteia
+        // uma vez (50/50) se ainda não houver variante e o bloco tiver B configurado.
+        $variant = null;
+        $abEnabled = !empty($data['ab_enabled']) || !empty($data['template_id_b']) || !empty($data['body_b']);
+        if ($abEnabled) {
+            $variant = $participant['ab_variant'] ?? null;
+            if (!$variant) {
+                $variant = (random_int(0, 1) === 1) ? 'B' : 'A';
+                $this->db->update('sequence_participants', ['ab_variant' => $variant], 'id = ?', [$participant['id']]);
+                (new LeadTimelineService())->add($contactId, 'tag', 'Variante A/B atribuída: ' . $variant, ['ab_variant' => $variant]);
+            }
+            if ($variant === 'B') {
+                if (!empty($data['template_id_b'])) {
+                    $tplB = $this->db->fetch("SELECT body FROM message_templates WHERE id = ?", [(int)$data['template_id_b']]);
+                    if ($tplB && $tplB['body']) $bodySrc = $tplB['body'];
+                } elseif (!empty($data['body_b'])) {
+                    $bodySrc = $data['body_b'];
+                }
+            }
+        }
+
+        // Injeta o nome do remetente a partir da conta de envio da sequência.
+        // Assim {{remetente_nome}} reflete a conta configurada, não um valor global.
+        $seqAccount = $this->db->fetch(
+            "SELECT ea.display_name FROM email_sequences es
+             LEFT JOIN email_accounts ea ON ea.id = es.email_account_id
+             WHERE es.id = ?",
+            [$participant['sequence_id']]
+        );
+        if (!empty($seqAccount['display_name'])) {
+            $contact['remetente_nome'] = $seqAccount['display_name'];
+        }
+
+        $msg = $this->render($bodySrc, $contact);
+        if (trim($msg) === '') {
+            Logger::warning('SequenceEngine whatsapp impedido', $logCtx + ['reason' => 'Mensagem vazia']);
+            return 'Mensagem vazia';
+        }
+
+        // Conta de envio de WhatsApp: a instância configurada na sequência ou,
+        // se não houver, a instância PADRÃO (espelha resolveAccount() do e-mail).
+        $ctxRow = $this->db->fetch("SELECT remote_jid FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        $seqInstanceId = $this->db->fetch("SELECT whatsapp_instance_id FROM email_sequences WHERE id = ?", [$participant['sequence_id']])['whatsapp_instance_id'] ?? null;
+        $instance = $this->resolveWhatsappInstance($seqInstanceId);
+        if (!$instance) {
+            Logger::warning('SequenceEngine whatsapp impedido', $logCtx + ['reason' => 'Nenhuma instância de WhatsApp disponível (nem escolhida na sequência, nem padrão)']);
+            return 'Nenhuma instância de WhatsApp disponível. Escolha uma na sequência ou defina uma instância padrão em WhatsApp.';
+        }
+        $instanceId = (int)$instance['id'];
+
+        // A instância precisa estar conectada (senão a Evolution retorna "Connection Closed").
+        if (!$this->isInstanceConnected($instanceId)) {
+            Logger::warning('SequenceEngine whatsapp impedido', $logCtx + [
+                'reason' => 'Instância de WhatsApp não conectada',
+                'instance_id' => $instanceId,
+                'connection_status' => $instance['connection_status'] ?? null,
+            ]);
+            return 'A instância de WhatsApp da sequência não está conectada. Conecte-a em WhatsApp.';
+        }
+
+        try {
+            $api = EvolutionApi::fromInstance($instanceId);
+            if (!$api) {
+                Logger::warning('SequenceEngine whatsapp impedido', $logCtx + ['reason' => 'Instância padrão indisponível', 'instance_id' => $instanceId]);
+                return 'Instância padrão de WhatsApp indisponível';
+            }
+
+            // Mesmo caminho do envio manual (que funciona): usa o remote_jid do lead
+            // quando for um JID válido; caso contrário monta a partir do telefone.
+            $existingJid = $ctxRow['remote_jid'] ?? '';
+            $isRealJid = $existingJid && stripos($existingJid, 'lead_') === false && strpos($existingJid, '@') !== false;
+            $jid = $isRealJid ? $existingJid : $api->normalizeJid($api->normalizeNumber($contact['phone']));
+
+            // Resolve o JID REAL no WhatsApp (corrige o 9º dígito de números BR e
+            // evita HTTP 400 ao enviar para um JID que o WhatsApp não reconhece).
+            // Igual ao fluxo de "nova conversa" que funciona.
+            $checkedExists = null; // null = não foi possível checar; true/false = resultado
+            try {
+                $phoneOnly = $api->extractPhone($jid);
+                $check = $api->checkIsWhatsapp([$phoneOnly]);
+                if (is_array($check)) {
+                    foreach ($check as $item) {
+                        // Casa o retorno com o número consultado (quando informado)
+                        if (array_key_exists('exists', $item)) $checkedExists = !empty($item['exists']);
+                        if (!empty($item['exists']) && !empty($item['jid'])) {
+                            $jid = $api->normalizeJid($item['jid']);
+                            $checkedExists = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) { /* segue com o jid normalizado */ }
+
+            // Número não tem WhatsApp: não adianta enviar (a Evolution devolve HTTP 400).
+            // Registra e falha com mensagem clara, sem gerar erro cru de API.
+            if ($checkedExists === false) {
+                $onlyDigits = preg_replace('/\D/', '', (string) $contact['phone']);
+                $msgFail = 'Número sem WhatsApp: ' . $onlyDigits . ' não possui conta no WhatsApp.';
+                (new LeadTimelineService())->add($contactId, 'note', 'WhatsApp da sequência não enviado: ' . $msgFail, ['channel' => 'whatsapp']);
+                return $msgFail;
+            }
+
+            $result = $api->sendText($jid, $msg);
+            // A Evolution retorna erro tanto em ['error'=>true] quanto em HTTP >= 400.
+            if (is_array($result) && !empty($result['error'])) {
+                $detail = $result['message'] ?? (is_string($result['error']) ? $result['error'] : 'erro');
+                $httpCode = $result['http_code'] ?? '';
+                // Inclui o corpo da resposta da Evolution (motivo real do 400)
+                $bodyDetail = '';
+                if (!empty($result['response'])) {
+                    $resp = $result['response'];
+                    if (is_array($resp)) {
+                        $inner = $resp['response']['message'] ?? ($resp['message'] ?? null);
+                        $bodyDetail = is_array($inner) ? json_encode($inner, JSON_UNESCAPED_UNICODE) : (string)($inner ?? json_encode($resp, JSON_UNESCAPED_UNICODE));
+                    } else {
+                        $bodyDetail = (string)$resp;
+                    }
+                }
+                $full = 'Falha ao enviar via Evolution: ' . $detail . ($httpCode ? " (HTTP $httpCode)" : '') . ($bodyDetail !== '' ? ' — ' . mb_substr($bodyDetail, 0, 500) : '') . ' [jid: ' . $jid . ']';
+                (new LeadTimelineService())->add($contactId, 'note', 'WhatsApp da sequência falhou: ' . $full, ['channel' => 'whatsapp']);
+                Logger::error('SequenceEngine whatsapp 400', ['contact' => $contactId, 'jid' => $jid, 'response' => $result['response'] ?? null]);
+                return $full;
+            }
+
+            // Grava a mensagem NO PRÓPRIO contato do lead (para aparecer no chat dele).
+            // sent_by = dono da instância que enviou (espelha o e-mail): faz a
+            // conversa aparecer no chat dessa pessoa, mesmo em disparo automático.
+            $this->db->insert('whatsapp_messages', [
+                'instance_id' => $instanceId,
+                'contact_id' => $contactId,
+                'remote_jid' => $isRealJid ? $ctxRow['remote_jid'] : $jid,
+                'message_id' => $result['key']['id'] ?? uniqid('seq_'),
+                'from_me' => 1,
+                'message_type' => 'text',
+                'message_text' => $msg,
+                'sender_name' => 'Prospecção',
+                'sent_by' => $this->resolveInstanceOwner($instanceId),
+                'timestamp' => date('Y-m-d H:i:s'),
+                'is_read' => 1,
+            ]);
+            // Desarquiva, atualiza "última mensagem" e corrige o JID do lead se estava
+            // com placeholder/errado (para o chat e futuros envios usarem o JID real).
+            $contactUpdate = ['is_archived' => 0, 'last_message_at' => date('Y-m-d H:i:s')];
+            if (!$isRealJid) $contactUpdate['remote_jid'] = $jid;
+            $this->db->update('whatsapp_contacts', $contactUpdate, 'id = ?', [$contactId]);
+
+            (new LeadTimelineService())->add($contactId, 'note', 'WhatsApp enviado pela sequência.', ['channel' => 'whatsapp']);
+
+            // Analytics (Camada 1): registra a mensagem de WhatsApp + marca 'sent'.
+            try {
+                $an = new ProspectingAnalytics();
+                $an->logMessage([
+                    'contact_id' => $contactId,
+                    'sequence_id' => $participant['sequence_id'] ?? null,
+                    'participant_id' => $participant['id'] ?? null,
+                    'node_id' => $node['id'] ?? null,
+                    'channel' => 'whatsapp',
+                    'ab_variant' => $variant ?? ($participant['ab_variant'] ?? null),
+                    'subject' => null,
+                    'body' => $msg,
+                ]);
+                $an->markStage($participant, 'sent');
+            } catch (\Throwable $e) { /* nunca quebra o envio */ }
+
+            return true;
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine whatsapp', ['contact' => $contactId, 'error' => $e->getMessage()]);
+            return 'Erro: ' . $e->getMessage();
+        }
+    }
+
+    /** Confirma (ao vivo) se a instância está conectada; atualiza o cache. */
+    private function isInstanceConnected($instanceId)
+    {
+        $inst = $this->db->fetch("SELECT * FROM whatsapp_instances WHERE id = ?", [$instanceId]);
+        if (!$inst) return false;
+        try {
+            $api = EvolutionApi::fromInstance($instanceId);
+            if (!$api) return false;
+            $state = $api->connectionState();
+            // Formato Evolution: { instance: { state: 'open'|'connecting'|'close' } }
+            $st = $state['instance']['state'] ?? ($state['state'] ?? null);
+            if ($st) {
+                $this->db->update('whatsapp_instances', ['connection_status' => $st], 'id = ?', [$instanceId]);
+                return in_array($st, ['open', 'connected'], true);
+            }
+        } catch (\Throwable $e) { /* rede/instância indisponível */ }
+        // Sem resposta ao vivo: confia no cache
+        return in_array($inst['connection_status'] ?? '', ['open', 'connected'], true);
+    }
+
+    /**
+     * Reveal progressivo: revela ao Apollo apenas os dados marcados no bloco
+     * (telefone e/ou e-mail) que AINDA FALTAM no lead. Não gasta crédito com o que
+     * já existe. Telefone chega de forma assíncrona via webhook.
+     * $data: ['reveal_phone'=>0/1 (default 1), 'reveal_email'=>0/1]
+     */
+    private function doReveal($participant, $data = [])
+    {
+        $contactId = $participant['contact_id'];
+        // Por padrão o bloco revela telefone; e-mail só se marcado.
+        $wantPhone = array_key_exists('reveal_phone', $data) ? !empty($data['reveal_phone']) : true;
+        $wantEmail = !empty($data['reveal_email']);
+
+        $contact = $this->db->fetch("SELECT phone, lead_email FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        $hasPhone = $contact && !empty($contact['phone']);
+        $hasEmail = $contact && !empty($contact['lead_email']);
+
+        // Nada a revelar (já tem tudo o que foi pedido)? sai sem gastar crédito.
+        $needPhone = $wantPhone && !$hasPhone;
+        $needEmail = $wantEmail && !$hasEmail;
+        if (!$needPhone && !$needEmail) return;
+
+        // Localiza o staging Apollo vinculado a este lead
+        $lead = $this->db->fetch("SELECT * FROM apollo_leads WHERE contact_id = ? ORDER BY id DESC LIMIT 1", [$contactId]);
+        if (!$lead || empty($lead['apollo_id'])) return;
+
+        try {
+            $apollo = new ApolloApi();
+            if (!$apollo->isConfigured()) return;
+
+            $params = ['id' => $lead['apollo_id']];
+
+            // E-mail: síncrono. Revela e grava se ainda faltava.
+            if ($needEmail) {
+                $params['reveal_personal_emails'] = true;
+            }
+            // Telefone: assíncrono via webhook (evita duplicar se já pendente).
+            $phonePending = ($lead['phone_status'] ?? null) === 'pending';
+            $doPhone = $needPhone && !$phonePending;
+            if ($doPhone) {
+                $webhookToken = trim((string) Config::get('apollo_webhook_token'));
+                $base = rtrim(baseUrl(''), '/');
+                if ($base !== '' && stripos($base, 'http') === 0) {
+                    $params['reveal_phone_number'] = true;
+                    $params['webhook_url'] = $base . '/crm/apolloPhoneWebhook' . ($webhookToken !== '' ? '?token=' . rawurlencode($webhookToken) : '');
+                } else {
+                    $doPhone = false; // sem URL pública não há como receber o telefone
+                }
+            }
+
+            if (empty($params['reveal_personal_emails']) && empty($params['reveal_phone_number'])) return;
+
+            $res = $apollo->enrichPerson($params);
+            if (empty($res['success'])) return;
+
+            $person = $res['data']['person'] ?? null;
+
+            // Grava e-mail revelado (síncrono)
+            if ($needEmail && $person) {
+                $email = $this->extractRevealedEmail($person);
+                if ($email) {
+                    $this->db->update('whatsapp_contacts', ['lead_email' => $email], 'id = ?', [$contactId]);
+                    $this->db->update('apollo_leads', ['email' => $email, 'is_enriched' => 1], 'id = ?', [$lead['id']]);
+                    (new LeadTimelineService())->add($contactId, 'note', 'E-mail revelado pelo Apollo (progressivo).', ['channel' => 'apollo']);
+                }
+            }
+
+            // Marca telefone como pendente (chega via webhook)
+            if ($doPhone) {
+                $requestId = $person['id'] ?? ($res['data']['request_id'] ?? null);
+                $this->db->update('apollo_leads', [
+                    'phone_status' => 'pending',
+                    'phone_request_id' => $requestId,
+                    'phone_requested_by' => $participant['added_by'] ?? null,
+                ], 'id = ?', [$lead['id']]);
+                (new LeadTimelineService())->add($contactId, 'note', 'Reveal de telefone solicitado ao Apollo (progressivo).', ['channel' => 'apollo']);
+            }
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine reveal', ['contact' => $contactId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Bloco IA (ChatGPT): monta o prompt do operador + contexto do lead (dados +
+     * histórico recente de mensagens) e consulta a OpenAI.
+     *  - mode='decision' → pede uma decisão SIM/NÃO; retorna ['decision'=>bool].
+     *  - mode='simple'   → retorna o texto e, se configurado, grava como nota.
+     * @return array ['decision'=>bool, 'text'=>string, 'detail'=>string, 'error'=>?string]
+     */
+    private function doAi($participant, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $data = $node['data'] ?? [];
+        $mode = ($data['mode'] ?? 'simple') === 'decision' ? 'decision' : 'simple';
+        $model = trim((string)($data['model'] ?? 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+        $promptTpl = (string)($data['prompt'] ?? '');
+
+        $apiKey = trim((string) Config::get('openai_api_key'));
+        if ($apiKey === '') {
+            $msg = 'Chave da OpenAI não configurada em Configurações.';
+            (new LeadTimelineService())->add($contactId, 'note', 'Bloco IA não executado: ' . $msg, ['channel' => 'ai']);
+            return ['decision' => false, 'text' => '', 'detail' => $msg, 'error' => $msg];
+        }
+
+        $contact = $this->db->fetch("SELECT id, contact_name, push_name, lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$contact) return ['decision' => false, 'text' => '', 'detail' => 'Lead não encontrado', 'error' => 'no_contact'];
+
+        // Renderiza variáveis do prompt ({{primeiro_nome}}, {{empresa}}, etc.)
+        $prompt = $this->render($promptTpl, $contact);
+
+        // Contexto automático: dados do lead + histórico recente (e-mail + WhatsApp).
+        $context = $this->buildAiContext($contactId, $contact);
+
+        // Instrução de sistema conforme o modo
+        if ($mode === 'decision') {
+            $system = 'Você é um assistente de qualificação comercial. Baseie a decisão SOMENTE na "RESPOSTA ATUAL DO LEAD" '
+                . '(a última resposta dele); ignore mensagens anteriores a ela, mesmo que sejam positivas. '
+                . 'Recusas explícitas como "não", "não quero", "não tenho interesse", "pare", "remover", "não é o momento" '
+                . 'significam decision=false. Interesse ou dúvidas ("sim", "quero", "como funciona", "quanto custa", "tem material") '
+                . 'significam decision=true. Em caso de conflito, a RESPOSTA ATUAL prevalece. '
+                . 'Responda SOMENTE com JSON válido no formato {"decision": true|false, "reason": "curto"}. '
+                . 'decision=true significa SIM (interesse); decision=false significa NÃO (recusa).';
+            $responseFormat = ['type' => 'json_object'];
+        } else {
+            $system = 'Você é um assistente comercial da ON Solutions Brasil. Responda de forma objetiva e profissional, '
+                . 'em português do Brasil, apenas com o texto solicitado (sem markdown).';
+            $responseFormat = null;
+        }
+
+        $userContent = $prompt . "\n\n---\nCONTEXTO DO LEAD:\n" . $context;
+
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user', 'content' => $userContent],
+            ],
+            'temperature' => $mode === 'decision' ? 0.0 : 0.4,
+            'max_tokens' => 800,
+        ];
+        if ($responseFormat) $payload['response_format'] = $responseFormat;
+
+        try {
+            $ch = curl_init('https://api.openai.com/v1/chat/completions');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 60,
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErr = curl_error($ch);
+            curl_close($ch);
+
+            if ($httpCode >= 400 || !$response) {
+                $msg = 'Falha ao consultar a IA (HTTP ' . $httpCode . ')' . ($curlErr ? ': ' . $curlErr : '');
+                Logger::error('SequenceEngine ai', ['contact' => $contactId, 'http' => $httpCode, 'err' => $curlErr, 'body' => is_string($response) ? substr($response, 0, 300) : null]);
+                (new LeadTimelineService())->add($contactId, 'note', 'Bloco IA falhou: ' . $msg, ['channel' => 'ai']);
+                return ['decision' => false, 'text' => '', 'detail' => $msg, 'error' => $msg];
+            }
+
+            $body = json_decode($response, true);
+            $content = trim((string)($body['choices'][0]['message']['content'] ?? ''));
+
+            if ($mode === 'decision') {
+                $parsed = json_decode($content, true);
+                $decision = is_array($parsed) ? (bool)($parsed['decision'] ?? false) : (stripos($content, 'true') !== false);
+                $reason = is_array($parsed) ? (string)($parsed['reason'] ?? '') : $content;
+                (new LeadTimelineService())->add($contactId, 'note',
+                    'IA (decisão): ' . ($decision ? 'SIM' : 'NÃO') . ($reason !== '' ? ' — ' . $reason : ''),
+                    ['channel' => 'ai', 'model' => $model, 'decision' => $decision]);
+                return ['decision' => $decision, 'text' => $content, 'detail' => ($decision ? 'SIM' : 'NÃO') . ($reason ? ' — ' . mb_substr($reason, 0, 200) : ''), 'error' => null];
+            }
+
+            // Modo simples: registra a resposta (opcional) como nota do lead.
+            if (!empty($data['save_note']) || !isset($data['save_note'])) {
+                (new LeadTimelineService())->add($contactId, 'note', 'IA (resposta): ' . mb_substr($content, 0, 1500), ['channel' => 'ai', 'model' => $model]);
+            }
+            return ['decision' => false, 'text' => $content, 'detail' => mb_substr($content, 0, 200), 'error' => null];
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine ai exception', ['contact' => $contactId, 'error' => $e->getMessage()]);
+            return ['decision' => false, 'text' => '', 'detail' => 'Erro: ' . $e->getMessage(), 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Bloco ATENDENTE IA (FAQ): responde dúvidas do lead sobre a empresa com base
+     * na base de conhecimento configurada e classifica a intenção. Enquanto a
+     * intenção não for clara, responde a dúvida (mesmo canal) e mantém o ciclo,
+     * respeitando a janela de escuta. Ao concluir, ramifica em duas saídas:
+     * SIM (quer seguir/avançar) | NÃO (quer encerrar/sem interesse).
+     * @return array ['intent'=>'yes|no|unclear', 'detail'=>string, 'error'=>?string]
+     */
+    private function doAiAgent($participant, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $data = $node['data'] ?? [];
+        $model = trim((string)($data['model'] ?? 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+        $companyInfo = trim((string)($data['company_info'] ?? ''));
+        // Instruções: junta o campo "instructions" e, quando vier do bloco IA
+        // (ChatGPT) com módulo acoplado, também o "prompt" configurado no bloco.
+        $instructions = trim((string)($data['instructions'] ?? ''));
+        $promptExtra = trim((string)($data['prompt'] ?? ''));
+        if ($promptExtra !== '') $instructions = trim($instructions . ' ' . $promptExtra);
+        $maxTurns = max(1, (int)($data['max_turns'] ?? 6));
+        // Toggle do bloco: ativo (loop de dúvidas) x inativo (só classifica SIM/NÃO).
+        // No bloco IA acoplado só chegamos aqui quando faq_active, então default = ativo.
+        $agentActive = !isset($data['active']) || !empty($data['active']);
+
+        $apiKey = trim((string) Config::get('openai_api_key'));
+        if ($apiKey === '') {
+            return ['intent' => 'unclear', 'active' => $agentActive, 'turns' => (int)($participant['ai_agent_turns'] ?? 0), 'max_turns' => $maxTurns, 'detail' => 'OpenAI não configurada.', 'error' => 'no_key'];
+        }
+
+        $contact = $this->db->fetch("SELECT id, contact_name, push_name, lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$contact) return ['intent' => 'unclear', 'active' => $agentActive, 'turns' => (int)($participant['ai_agent_turns'] ?? 0), 'max_turns' => $maxTurns, 'detail' => 'Lead não encontrado', 'error' => 'no_contact'];
+
+        // Trava de segurança (apenas no modo ATIVO): limite de interações para não
+        // ficar preso no loop de dúvidas para sempre. Ao atingir SEM interesse
+        // claro, a regra (SequenceAiRules::agentAction) encerra com tag "sem
+        // interesse" (saída NÃO) — já demos várias chances de demonstrar interesse.
+        $turns = (int)($participant['ai_agent_turns'] ?? 0);
+        if ($agentActive && $turns >= $maxTurns) {
+            (new LeadTimelineService())->add($contactId, 'note', 'Atendente IA atingiu o limite de interações sem interesse claro — encerrando (saída NÃO / sem interesse).', ['channel' => 'ai_agent']);
+            return ['intent' => 'unclear', 'active' => true, 'turns' => $turns, 'max_turns' => $maxTurns, 'limit' => true, 'detail' => 'Limite de interações atingido — encerra sem interesse.', 'error' => null];
+        }
+
+        $context = $this->buildAiContext($contactId, $contact);
+        if ($agentActive) {
+            // Modo ATIVO: tira dúvidas em loop; pode devolver 'unclear' + 'reply'.
+            $system = "Você é um atendente virtual da ON Solutions Brasil. Responda dúvidas do lead sobre a empresa usando SOMENTE as informações fornecidas abaixo. "
+                . "Seja cordial, objetivo e em português do Brasil. Não invente dados (preços, prazos) que não estejam na base. "
+                . ($instructions !== '' ? ("Regras adicionais: " . $instructions . " ") : "")
+                . "Seu papel é tirar as dúvidas do lead e, quando possível, concluir se ele QUER SEGUIR (avançar/agendar/demonstra interesse claro) ou QUER ENCERRAR (sem interesse/pede para parar). "
+                . "Responda SOMENTE com JSON válido no formato: "
+                . '{"intent":"yes|no|unclear","reply":"texto para enviar ao lead"}. '
+                . "Use 'yes' quando o lead demonstra que quer avançar (marcar reunião, saber próximos passos, aceitar a proposta); "
+                . "'no' quando ele não tem interesse ou pede para parar; "
+                . "'unclear' enquanto ele ainda estiver tirando dúvidas ou indeciso — nesse caso, 'reply' deve responder a dúvida e convidar gentilmente a avançar.";
+        } else {
+            // Modo INATIVO: classificação simples numa única passada, sem responder
+            // dúvidas e sem 'unclear'. Deve decidir SIM ou NÃO.
+            $system = "Você classifica a intenção de um lead da ON Solutions Brasil a partir da última resposta e do histórico. "
+                . "Responda em português do Brasil e SOMENTE com JSON válido no formato: "
+                . '{"intent":"yes|no"}. '
+                . ($instructions !== '' ? ("Regras adicionais: " . $instructions . " ") : "")
+                . "Use 'yes' quando o lead demonstra INTERESSE (quer conversar, receber material, agendar reunião ou avançar); "
+                . "'no' quando não tem interesse, pede para parar, diz que não é o momento ou já tem fornecedor. Em dúvida real, use 'no'. "
+                . "NÃO escreva nenhum texto para o lead — apenas classifique.";
+        }
+
+        $base = "INFORMAÇÕES DA EMPRESA:\n" . ($companyInfo !== '' ? $companyInfo : '(não informado)') . "\n\n"
+            . "CONTEXTO/HISTÓRICO DO LEAD:\n" . $context . "\n\n"
+            . "IMPORTANTE: classifique com base na RESPOSTA ATUAL DO LEAD (a última). "
+            . "Ignore mensagens anteriores a ela. Uma recusa atual (\"não\", \"não quero\") prevalece sobre qualquer mensagem positiva antiga.";
+
+        try {
+            $ch = curl_init('https://api.openai.com/v1/chat/completions');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode([
+                    'model' => $model,
+                    'messages' => [
+                        ['role' => 'system', 'content' => $system],
+                        ['role' => 'user', 'content' => $base],
+                    ],
+                    'temperature' => 0.3,
+                    'max_tokens' => 700,
+                    'response_format' => ['type' => 'json_object'],
+                ], JSON_UNESCAPED_UNICODE),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 60,
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode >= 400 || !$response) {
+                return ['intent' => 'unclear', 'active' => $agentActive, 'turns' => $turns, 'max_turns' => $maxTurns, 'detail' => 'Falha na IA (HTTP ' . $httpCode . ').', 'error' => 'http'];
+            }
+            $body = json_decode($response, true);
+            $content = trim((string)($body['choices'][0]['message']['content'] ?? ''));
+            $parsed = json_decode($content, true);
+            $intent = is_array($parsed) ? ($parsed['intent'] ?? 'unclear') : 'unclear';
+            $reply = is_array($parsed) ? trim((string)($parsed['reply'] ?? '')) : '';
+
+            if (!$agentActive) {
+                // Modo INATIVO: classificação pura numa passada. Sem loop, sem
+                // resposta ao lead e sem contador. Só a recusa EXPLÍCITA ('no')
+                // encerra; indecisão ('unclear') NÃO vira 'no' — a regra de
+                // roteamento (SequenceAiRules) encaminha ao agendamento.
+                $intent = SequenceAiRules::normalizeIntent($intent);
+                (new LeadTimelineService())->add($contactId, 'note',
+                    'Classificação IA (SIM/NÃO): ' . $intent, ['channel' => 'ai_agent', 'intent' => $intent, 'mode' => 'classify']);
+                return ['intent' => $intent, 'active' => false, 'turns' => $turns, 'max_turns' => $maxTurns, 'detail' => 'Classificação: ' . $intent, 'error' => null];
+            }
+
+            // Modo ATIVO: loop de dúvidas.
+            $intent = SequenceAiRules::normalizeIntent($intent);
+
+            // Incrementa o contador de interações do atendente.
+            $newTurns = $turns + 1;
+            $this->db->update('sequence_participants', ['ai_agent_turns' => $newTurns], 'id = ?', [$participant['id']]);
+
+            // Sempre que houver texto de resposta, envia pelo mesmo canal do lead.
+            if ($reply !== '') {
+                $this->replyText($participant, $contact, $reply, 'ON Solutions Brasil');
+            }
+
+            (new LeadTimelineService())->add($contactId, 'note',
+                'Atendente IA · intenção: ' . $intent . ($reply !== '' ? ' — respondeu dúvida.' : ''),
+                ['channel' => 'ai_agent', 'intent' => $intent]);
+
+            return ['intent' => $intent, 'active' => true, 'turns' => $newTurns, 'max_turns' => $maxTurns, 'detail' => 'Intenção: ' . $intent, 'error' => null];
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine ai_agent', ['contact' => $contactId, 'error' => $e->getMessage()]);
+            return ['intent' => 'unclear', 'active' => $agentActive, 'turns' => $turns, 'max_turns' => $maxTurns, 'detail' => 'Erro na IA.', 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Envia um texto ao lead pelo MESMO canal da última resposta (e-mail bufferizado
+     * ou WhatsApp imediato). Reaproveitado pelo Atendente IA.
+     */
+    private function replyText($participant, $contact, $text, $subject = 'ON Solutions Brasil')
+    {
+        $channel = $this->lastReplyChannel($participant['contact_id'], $contact);
+        if ($channel === 'email' && empty($contact['lead_email'])) $channel = 'whatsapp';
+        if ($channel === 'whatsapp' && empty($contact['phone'])) $channel = 'email';
+
+        if ($channel === 'email' && !empty($contact['lead_email'])) {
+            $account = $this->resolveAccount($this->db->fetch("SELECT email_account_id FROM email_sequences WHERE id = ?", [$participant['sequence_id']])['email_account_id'] ?? null);
+            if ($account) {
+                $bodyHtml = '<p>' . nl2br(htmlspecialchars($text)) . '</p>';
+                $this->bufferEmail($participant, $account, $contact['lead_email'], $subject, $bodyHtml, 'ai_agent');
+                return true;
+            }
+        }
+        if (!empty($contact['phone'])) {
+            return $this->sendWhatsappRaw($participant['contact_id'], $contact, $text) === true;
+        }
+        return false;
+    }
+
+    /**
+     * Retorna a última resposta do lead (texto + canal), comparando a mensagem
+     * recebida mais recente por WhatsApp com a última resposta por e-mail.
+     * @return array ['channel'=>'email'|'whatsapp'|null, 'text'=>?string]
+     */
+    private function lastLeadReply($contactId)
+    {
+        $waTs = 0; $waText = null;
+        try {
+            $wa = $this->db->fetch(
+                "SELECT message_text, timestamp FROM whatsapp_messages
+                 WHERE contact_id = ? AND from_me = 0 AND message_text IS NOT NULL AND message_text <> ''
+                 ORDER BY id DESC LIMIT 1", [$contactId]);
+            if ($wa) { $waTs = strtotime($wa['timestamp']); $waText = $wa['message_text']; }
+        } catch (\Throwable $e) { /* ignore */ }
+
+        $emTs = 0; $emText = null;
+        try {
+            $em = $this->db->fetch(
+                "SELECT reply_snippet, replied_at FROM email_messages
+                 WHERE contact_id = ? AND replied_at IS NOT NULL
+                 ORDER BY replied_at DESC LIMIT 1", [$contactId]);
+            if ($em) { $emTs = strtotime($em['replied_at']); $emText = $em['reply_snippet'] ?? null; }
+        } catch (\Throwable $e) { /* coluna reply_snippet pode não existir */ }
+
+        if ($waTs === 0 && $emTs === 0) return ['channel' => null, 'text' => null];
+        if ($waTs >= $emTs) return ['channel' => 'whatsapp', 'text' => $waText ? mb_substr($waText, 0, 2000) : null];
+        return ['channel' => 'email', 'text' => $emText ? mb_substr($emText, 0, 2000) : null];
+    }
+
+    /**
+     * Analytics: registra o interesse classificado pela IA no desfecho do lead.
+     * positivo → estágio 'interested'; negativo → 'lost' com a objeção detectada.
+     */
+    private function analyticsInterest($participant, $positive, $detail = null)
+    {
+        try {
+            $an = new ProspectingAnalytics();
+            if ($positive) {
+                $an->markStage($participant, 'interested', [
+                    'interest' => 'positive',
+                    'interest_at' => date('Y-m-d H:i:s'),
+                ]);
+            } else {
+                $an->markStage($participant, 'lost', [
+                    'interest' => 'negative',
+                    'interest_at' => date('Y-m-d H:i:s'),
+                    'objection' => $detail ? mb_substr($detail, 0, 250) : null,
+                    'lost_reason' => 'sem interesse',
+                ]);
+            }
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /**
+     * Analytics: marca que o lead AGENDOU a reunião (marco mais importante do funil).
+     * Chamado pelo BookingController ao confirmar o agendamento.
+     */
+    public function analyticsScheduled($contactId, $meetingAt = null)
+    {
+        try {
+            $an = new ProspectingAnalytics();
+            // Aplica ao participante mais recente do contato (ativo ou não).
+            $p = $this->db->fetch(
+                "SELECT * FROM sequence_participants WHERE contact_id = ? ORDER BY id DESC LIMIT 1",
+                [$contactId]
+            );
+            if ($p) {
+                $an->markStage($p, 'scheduled', [
+                    'scheduled_at' => $meetingAt ?: date('Y-m-d H:i:s'),
+                    'interest' => 'positive',
+                ]);
+            }
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /**
+     * Remove o lead da lista de prospecção: marca unsubscribed=1 (bloqueia envios
+     * futuros), aplica etiqueta e registra na timeline. Também interrompe outras
+     * sequências ativas do contato.
+     */
+    private function unsubscribeContact($contactId, $reason = 'Sem interesse')
+    {
+        try {
+            $this->db->update('whatsapp_contacts', ['unsubscribed' => 1], 'id = ?', [$contactId]);
+            (new LeadTimelineService())->add($contactId, 'note', 'Lead removido da lista: ' . $reason, ['channel' => 'sequence', 'action' => 'unsubscribe']);
+            $this->applyLabel($contactId, 'sem interesse', '#dc3545');
+            // Move o card para "Sem Interesse" e marca o desfecho como perdido.
+            $this->markNegativeOutcome($contactId);
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine unsubscribe', ['contact' => $contactId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Lead demonstrou falta de interesse (IA classificou recusa ou opt-out):
+     * move o card para a coluna "Sem Interesse" do board de prospecção e marca
+     * o desfecho como perdido. Silencioso e idempotente.
+     */
+    private function markNegativeOutcome($contactId)
+    {
+        try {
+            (new CrmBoard())->markOutcomeByContact($contactId, CrmRules::COLUMN_NOT_INTERESTED, 'lost');
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine markNegativeOutcome', ['contact' => $contactId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Lead nunca respondeu e a sequência terminou: move o card para "Sem Resposta"
+     * e marca o desfecho como perdido. Silencioso e idempotente.
+     */
+    private function markNoReplyOutcome($contactId)
+    {
+        try {
+            (new CrmBoard())->markOutcomeByContact($contactId, CrmRules::COLUMN_NO_REPLY, 'lost');
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine markNoReplyOutcome', ['contact' => $contactId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Bloco AGENDAMENTO: cria um link público de agendamento (token) com os dados
+     * do lead pré-preenchidos e envia o convite por e-mail e/ou WhatsApp. Ao agendar,
+     * o BookingController cria o evento no Google Meet e notifica as partes.
+     * @return array ['detail'=>string, 'error'=>?string]
+     */
+    private function doSchedule($participant, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $data = $node['data'] ?? [];
+        $channel = in_array($data['channel'] ?? 'auto', ['auto', 'email', 'whatsapp', 'reply'], true) ? $data['channel'] : 'auto';
+        // 'reply' = usa o mesmo canal em que o lead respondeu por último.
+        if ($channel === 'reply') {
+            $contactForCh = $this->db->fetch("SELECT lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+            $channel = $this->lastReplyChannel($contactId, $contactForCh);
+        }
+        $duration = (int)($data['duration'] ?? 0) ?: max(15, (int)(Config::get('booking_duration_min') ?? 45));
+        $expiryDays = max(1, (int)(Config::get('booking_link_expiry_days') ?? 30));
+        $title = trim((string)($data['title'] ?? '')) ?: 'Reunião com a ON Solutions Brasil';
+
+        $contact = $this->db->fetch("SELECT id, contact_name, push_name, lead_email, phone, assigned_to FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$contact) return ['detail' => 'Lead não encontrado', 'error' => 'no_contact'];
+
+        // Reaproveita um link pendente do mesmo lead, se existir; senão cria um novo.
+        $existing = $this->db->fetch(
+            "SELECT token FROM agenda_booking_links WHERE contact_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            [$contactId]);
+        if ($existing) {
+            $token = $existing['token'];
+        } else {
+            $token = bin2hex(random_bytes(16));
+            $this->db->insert('agenda_booking_links', [
+                'token' => $token,
+                'contact_id' => $contactId,
+                'assigned_to' => $contact['assigned_to'] ?: ($participant['added_by'] ?? null),
+                'sequence_participant_id' => $participant['id'],
+                'title' => $title,
+                'duration_min' => $duration,
+                'status' => 'pending',
+                'expires_at' => date('Y-m-d H:i:s', strtotime('+' . $expiryDays . ' days')),
+            ]);
+        }
+
+        $base = rtrim((string) Config::get('app_public_url'), '/') ?: rtrim(baseUrl(''), '/');
+        $link = $base . '/booking/' . $token;
+
+        // Mensagem do convite (com variáveis do lead + {{link_agendamento}})
+        $msgTpl = (string)($data['message'] ?? '');
+        if (trim($msgTpl) === '') {
+            $msgTpl = '{{primeiro_nome}}, para avançarmos, escolha o melhor dia e horário para uma conversa rápida (online). É só clicar no link: {{link_agendamento}}';
+        }
+        $rendered = $this->render($msgTpl, $contact);
+        $rendered = str_replace(['{{link_agendamento}}', '{{link}}'], $link, $rendered);
+
+        $hasEmail = !empty($contact['lead_email']);
+        $hasPhone = !empty($contact['phone']);
+        $sent = [];
+
+        // E-mail (agrupa com envios consecutivos: buffer + flush no fim da passada).
+        if (($channel === 'auto' || $channel === 'email') && $hasEmail) {
+            $account = $this->resolveAccount($this->db->fetch("SELECT email_account_id FROM email_sequences WHERE id = ?", [$participant['sequence_id']])['email_account_id'] ?? null);
+            if ($account) {
+                $bodyHtml = '<p>' . nl2br(htmlspecialchars($rendered)) . '</p>'
+                    . '<p style="text-align:center;margin:24px 0;"><a href="' . htmlspecialchars($link, ENT_QUOTES) . '" style="background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Escolher data e horário</a></p>';
+                $this->bufferEmail($participant, $account, $contact['lead_email'], $title, $bodyHtml, $node['id']);
+                $sent[] = 'e-mail';
+            }
+        }
+
+        // WhatsApp
+        if (($channel === 'auto' || $channel === 'whatsapp') && $hasPhone) {
+            $ok = $this->sendWhatsappRaw($contactId, $contact, $rendered);
+            if ($ok === true) $sent[] = 'WhatsApp';
+        }
+
+        (new LeadTimelineService())->add($contactId, 'note', 'Link de agendamento enviado (' . (implode(' + ', $sent) ?: 'nenhum canal disponível') . '): ' . $link, ['channel' => 'schedule']);
+
+        if (empty($sent)) {
+            return ['detail' => 'Nenhum canal disponível para enviar o link (sem e-mail/telefone).', 'error' => 'no_channel'];
+        }
+        return ['detail' => 'Convite de agendamento enviado por ' . implode(' + ', $sent) . '.', 'error' => null];
+    }
+
+    /**
+     * Descobre o canal da ÚLTIMA resposta do lead: compara a mensagem recebida
+     * mais recente por e-mail (email_messages inbound / replied_at) com a mais
+     * recente por WhatsApp (whatsapp_messages from_me=0). Retorna 'email' ou
+     * 'whatsapp'. Fallback: e-mail se houver e-mail; senão WhatsApp.
+     */
+    private function lastReplyChannel($contactId, $contact = null)
+    {
+        $emailTs = 0; $waTs = 0;
+
+        // Última evidência de resposta por e-mail (reply registrado)
+        $em = $this->db->fetch(
+            "SELECT COALESCE(replied_at, created_at) AS t FROM email_messages
+             WHERE contact_id = ? AND (direction='inbound' OR replied_at IS NOT NULL)
+             ORDER BY t DESC LIMIT 1", [$contactId]);
+        if ($em && !empty($em['t'])) $emailTs = strtotime($em['t']);
+
+        // Última mensagem recebida no WhatsApp
+        $wa = $this->db->fetch(
+            "SELECT timestamp AS t FROM whatsapp_messages
+             WHERE contact_id = ? AND from_me = 0 ORDER BY id DESC LIMIT 1", [$contactId]);
+        if ($wa && !empty($wa['t'])) $waTs = strtotime($wa['t']);
+
+        if ($emailTs === 0 && $waTs === 0) {
+            if (!$contact) $contact = $this->db->fetch("SELECT lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+            if (!empty($contact['lead_email'])) return 'email';
+            if (!empty($contact['phone'])) return 'whatsapp';
+            return 'email';
+        }
+        return ($waTs >= $emailTs) ? 'whatsapp' : 'email';
+    }
+
+    /**
+     * Bloco "Responder ao lead": envia uma mensagem pelo MESMO canal em que o
+     * lead respondeu por último (e-mail ou WhatsApp). O conteúdo é o mesmo texto;
+     * no e-mail usa o assunto informado. Assim a resposta nunca sai por um canal
+     * aleatório.
+     * @return array ['detail'=>string, 'error'=>?string, 'channel'=>string]
+     */
+    /**
+     * Gera uma resposta CURTA e específica à última dúvida do lead, usando a base
+     * de conhecimento informada no bloco e o histórico recente. Não inclui o
+     * convite (isso vem da mensagem configurada). Retorna '' em caso de falha.
+     */
+    private function aiShortAnswer($contactId, $contact, $data)
+    {
+        $apiKey = trim((string) Config::get('openai_api_key'));
+        if ($apiKey === '') return '';
+
+        $model = trim((string)($data['model'] ?? 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+        $companyInfo = trim((string)($data['company_info'] ?? ''));
+        $context = $this->buildAiContext($contactId, $contact);
+        $firstName = $this->render('{{primeiro_nome}}', $contact);
+
+        $system = "Você é um SDR da ON Solutions Brasil respondendo um lead no meio de uma conversa. "
+            . "Responda de forma BREVE (1 a 3 frases), específica e cordial, em português do Brasil, "
+            . "à ÚLTIMA dúvida/mensagem do lead, usando SOMENTE as informações abaixo. "
+            . "Não invente preços/prazos que não estejam na base. NÃO cumprimente de novo se a conversa já começou, "
+            . "NÃO faça convite para reunião nem inclua links (isso será acrescentado depois). "
+            . "Se o lead não fez pergunta objetiva, apenas reconheça o retorno em uma frase. "
+            . "Responda apenas com o texto da mensagem, sem aspas.";
+        $user = "INFORMAÇÕES DA EMPRESA:\n" . ($companyInfo !== '' ? $companyInfo : '(não informado)')
+            . "\n\nHISTÓRICO/CONTEXTO (o lead é " . $firstName . "):\n" . $context;
+
+        // RAG (Camada 3): casos reais parecidos que converteram, para embasar a resposta.
+        try {
+            $rag = (new ProspectingRag())->contextBlock($context, 2, null);
+            if ($rag !== '') $user .= "\n\n" . $rag;
+        } catch (\Throwable $e) { /* RAG é opcional */ }
+
+        try {
+            $ch = curl_init('https://api.openai.com/v1/chat/completions');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode([
+                    'model' => $model,
+                    'messages' => [
+                        ['role' => 'system', 'content' => $system],
+                        ['role' => 'user', 'content' => $user],
+                    ],
+                    'temperature' => 0.4,
+                    'max_tokens' => 220,
+                ], JSON_UNESCAPED_UNICODE),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 45,
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($httpCode >= 400 || !$response) return '';
+            $body = json_decode($response, true);
+            $text = trim((string)($body['choices'][0]['message']['content'] ?? ''));
+            // Remove aspas externas eventualmente adicionadas pelo modelo.
+            $text = trim($text, " \t\n\r\"'");
+            return $text;
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine aiShortAnswer', ['contact' => $contactId, 'error' => $e->getMessage()]);
+            return '';
+        }
+    }
+
+    private function doReply($participant, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $data = $node['data'] ?? [];
+        $contact = $this->db->fetch("SELECT id, contact_name, push_name, lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$contact) return ['detail' => 'Lead não encontrado', 'error' => 'no_contact', 'channel' => null];
+
+        $channel = $this->lastReplyChannel($contactId, $contact);
+        $subject = $this->render((string)($data['subject'] ?? 'ON Solutions Brasil'), $contact);
+        $bodyRaw = (string)($data['body'] ?? '');
+        $body = $this->render($bodyRaw, $contact);
+
+        // Opção IA: responde brevemente a dúvida do lead (usando a base informada
+        // e o histórico) e ANTECEDE a mensagem/convite configurado. Assim a
+        // resposta deixa de ser genérica: reconhece o que o lead perguntou e então
+        // segue com o convite para a reunião.
+        if (!empty($data['ai_reply'])) {
+            $ans = $this->aiShortAnswer($contactId, $contact, $data);
+            if ($ans !== '') $body = trim($ans) . "\n\n" . $body;
+        }
+
+        if (trim($body) === '') return ['detail' => 'Mensagem vazia.', 'error' => 'empty', 'channel' => $channel];
+
+        // Canal e-mail: precisa de e-mail; se não tiver, tenta WhatsApp como alternativa.
+        if ($channel === 'email' && empty($contact['lead_email'])) $channel = 'whatsapp';
+        if ($channel === 'whatsapp' && empty($contact['phone'])) $channel = 'email';
+
+        if ($channel === 'email') {
+            if (empty($contact['lead_email'])) return ['detail' => 'Sem e-mail para responder.', 'error' => 'no_email', 'channel' => $channel];
+            $bodyHtml = '<p>' . nl2br(htmlspecialchars($body)) . '</p>';
+            $account = $this->resolveAccount($this->db->fetch("SELECT email_account_id FROM email_sequences WHERE id = ?", [$participant['sequence_id']])['email_account_id'] ?? null);
+            if (!$account) return ['detail' => 'Sem conta de e-mail ativa.', 'error' => 'no_account', 'channel' => $channel];
+            // Agrupa com envios consecutivos (buffer + flush no fim da passada):
+            // se o próximo bloco também for e-mail, sai tudo num único e-mail.
+            $this->bufferEmail($participant, $account, $contact['lead_email'], $subject, $bodyHtml, $node['id']);
+            return ['detail' => 'Resposta enviada por e-mail.', 'error' => null, 'channel' => 'email'];
+        }
+
+        // Canal WhatsApp
+        if (empty($contact['phone'])) return ['detail' => 'Sem telefone para responder.', 'error' => 'no_phone', 'channel' => $channel];
+        $ok = $this->sendWhatsappRaw($contactId, $contact, $body);
+        return ($ok === true)
+            ? ['detail' => 'Resposta enviada por WhatsApp.', 'error' => null, 'channel' => 'whatsapp']
+            : ['detail' => 'Falha no WhatsApp: ' . (is_string($ok) ? $ok : ''), 'error' => 'send', 'channel' => 'whatsapp'];
+    }
+
+    /**
+     * Bloco CONEXÃO DE SEQUÊNCIA: inscreve o lead na sequência de destino.
+     * Usa o próprio enroll (respeita canal/elegibilidade). Não encerra a atual
+     * aqui — o step decide encerrar/seguir conforme data.stop_current.
+     * @return array ['detail'=>string, 'error'=>?string]
+     */
+    private function doConnect($participant, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $targetSeqId = (int)($node['data']['sequence_id'] ?? 0);
+        if (!$targetSeqId) return ['detail' => 'Sequência de destino não configurada.', 'error' => 'no_target'];
+
+        $seq = $this->db->fetch("SELECT id, name FROM email_sequences WHERE id = ?", [$targetSeqId]);
+        if (!$seq) return ['detail' => 'Sequência de destino não encontrada.', 'error' => 'not_found'];
+
+        $r = $this->enroll($targetSeqId, $contactId, $participant['added_by'] ?? null);
+        if (empty($r['success'])) {
+            (new LeadTimelineService())->add($contactId, 'note', 'Conexão de sequência falhou (' . $seq['name'] . '): ' . ($r['error'] ?? ''), ['channel' => 'sequence']);
+            return ['detail' => 'Falha ao conectar: ' . ($r['error'] ?? ''), 'error' => $r['error'] ?? 'enroll_failed'];
+        }
+        (new LeadTimelineService())->add($contactId, 'note', 'Conectado à sequência: ' . $seq['name'], ['channel' => 'sequence', 'sequence_id' => $targetSeqId]);
+        return ['detail' => 'Lead conectado à sequência "' . $seq['name'] . '".', 'error' => null];
+    }
+
+    /**
+     * Envia uma mensagem de texto simples ao lead pelo WhatsApp (instância padrão),
+     * reusando a resolução de JID/checagem do doWhatsapp. Retorna true em sucesso.
+     */
+    private function sendWhatsappRaw($contactId, $contact, $text)
+    {
+        // Garante que qualquer e-mail agrupado pendente do participante saia antes
+        // (mantém a ordem cronológica entre canais). Descobre o participante ativo.
+        $seqInstanceId = null;
+        try {
+            $p = $this->db->fetch("SELECT id, sequence_id FROM sequence_participants WHERE contact_id = ? AND status='active' ORDER BY id DESC LIMIT 1", [$contactId]);
+            if ($p && !empty($this->emailBuffer[$p['id']])) $this->flushEmail($p['id']);
+            // Conta de envio de WhatsApp escolhida na sequência (se houver).
+            if ($p && !empty($p['sequence_id'])) {
+                $seqInstanceId = $this->db->fetch("SELECT whatsapp_instance_id FROM email_sequences WHERE id = ?", [$p['sequence_id']])['whatsapp_instance_id'] ?? null;
+            }
+        } catch (\Throwable $e) { /* ignore */ }
+        try {
+            // Instância da sequência ou, se não configurada, a padrão (espelha resolveAccount).
+            $instance = $this->resolveWhatsappInstance($seqInstanceId);
+            if (!$instance) return 'Sem instância de WhatsApp disponível.';
+            $instanceId = (int)$instance['id'];
+            if (!$this->isInstanceConnected($instanceId)) return 'Instância de WhatsApp não conectada.';
+            $api = EvolutionApi::fromInstance($instanceId);
+            if (!$api) return 'Instância indisponível.';
+
+            $ctxRow = $this->db->fetch("SELECT remote_jid FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+            $existingJid = $ctxRow['remote_jid'] ?? '';
+            $isRealJid = $existingJid && stripos($existingJid, 'lead_') === false && strpos($existingJid, '@') !== false;
+            $jid = $isRealJid ? $existingJid : $api->normalizeJid($api->normalizeNumber($contact['phone']));
+
+            $checkedExists = null;
+            try {
+                $check = $api->checkIsWhatsapp([$api->extractPhone($jid)]);
+                if (is_array($check)) {
+                    foreach ($check as $item) {
+                        if (array_key_exists('exists', $item)) $checkedExists = !empty($item['exists']);
+                        if (!empty($item['exists']) && !empty($item['jid'])) { $jid = $api->normalizeJid($item['jid']); $checkedExists = true; break; }
+                    }
+                }
+            } catch (\Throwable $e) {}
+            if ($checkedExists === false) return 'Número sem WhatsApp.';
+
+            $result = $api->sendText($jid, $text);
+            if (is_array($result) && !empty($result['error'])) return 'Falha no envio do WhatsApp.';
+
+            $this->db->insert('whatsapp_messages', [
+                'instance_id' => $instanceId,
+                'contact_id' => $contactId,
+                'remote_jid' => $isRealJid ? $ctxRow['remote_jid'] : $jid,
+                'message_id' => $result['key']['id'] ?? uniqid('seq_'),
+                'from_me' => 1,
+                'message_type' => 'text',
+                'message_text' => $text,
+                'sent_by' => $this->resolveInstanceOwner($instanceId),
+                'timestamp' => date('Y-m-d H:i:s'),
+            ]);
+            $this->db->update('whatsapp_contacts', ['last_message_at' => date('Y-m-d H:i:s')], 'id = ?', [$contactId]);
+            return true;
+        } catch (\Throwable $e) {
+            Logger::error('SequenceEngine sendWhatsappRaw', ['contact' => $contactId, 'error' => $e->getMessage()]);
+            return 'Erro: ' . $e->getMessage();
+        }
+    }
+
+    /**
+     * Monta o contexto textual do lead para a IA: dados básicos, briefing e as
+     * últimas mensagens trocadas (e-mail e WhatsApp), do mais recente ao mais antigo.
+     */
+    private function buildAiContext($contactId, $contact)
+    {
+        $lines = [];
+        $name = $contact['contact_name'] ?: ($contact['push_name'] ?? '');
+        if ($name) $lines[] = 'Nome: ' . $name;
+        if (!empty($contact['lead_email'])) $lines[] = 'E-mail: ' . $contact['lead_email'];
+        if (!empty($contact['phone'])) $lines[] = 'Telefone: ' . $contact['phone'];
+
+        // Briefing comercial (empresa/cargo/necessidade), se houver
+        try {
+            $bf = $this->db->fetch("SELECT need, notes, main_pain, lead_temperature FROM commercial_briefings WHERE contact_id = ? LIMIT 1", [$contactId]);
+            if ($bf) {
+                if (!empty($bf['notes'])) $lines[] = 'Notas: ' . $bf['notes'];
+                if (!empty($bf['need'])) $lines[] = 'Necessidade: ' . $bf['need'];
+                if (!empty($bf['main_pain'])) $lines[] = 'Dor principal: ' . $bf['main_pain'];
+                if (!empty($bf['lead_temperature'])) $lines[] = 'Temperatura: ' . $bf['lead_temperature'];
+            }
+        } catch (\Throwable $e) { /* ignore */ }
+
+        // Últimos e-mails (assunto + status de resposta)
+        try {
+            $emails = $this->db->fetchAll(
+                "SELECT subject, direction, replied_at, sent_at FROM email_messages
+                 WHERE contact_id = ? ORDER BY id DESC LIMIT 5", [$contactId]);
+            foreach ($emails as $m) {
+                $dir = $m['direction'] === 'inbound' ? 'recebido' : 'enviado';
+                $lines[] = 'E-mail (' . $dir . '): ' . ($m['subject'] ?? '') . ($m['replied_at'] ? ' [respondido]' : '');
+            }
+        } catch (\Throwable $e) { /* ignore */ }
+
+        // Últimas mensagens de WhatsApp (texto + direção + timestamp), cronológica.
+        $waMsgs = [];
+        try {
+            $waMsgs = $this->db->fetchAll(
+                "SELECT from_me, message_text, timestamp FROM whatsapp_messages
+                 WHERE contact_id = ? AND message_text IS NOT NULL AND message_text <> ''
+                 ORDER BY id DESC LIMIT 12", [$contactId]);
+            $waMsgs = array_reverse($waMsgs);
+            foreach ($waMsgs as $m) {
+                $who = $m['from_me'] ? 'Nós' : 'Lead';
+                $lines[] = 'WhatsApp ' . $who . ': ' . mb_substr($m['message_text'], 0, 300);
+            }
+        } catch (\Throwable $e) { /* ignore */ }
+
+        // RESPOSTA ATUAL do lead: apenas as mensagens recebidas APÓS o último envio
+        // do sistema. É o que importa para classificar a intenção AGORA — evita que
+        // respostas antigas (ex.: testes anteriores com o mesmo contato) contaminem
+        // a decisão. Se o lead escreveu "não quero" agora, isso prevalece.
+        $currentReply = $this->currentLeadReplyText($contactId);
+        if ($currentReply !== '') {
+            $lines[] = 'RESPOSTA ATUAL DO LEAD (é ESTA que você deve classificar — ignore mensagens anteriores a ela): "' . $currentReply . '"';
+        }
+
+        if (empty($lines)) return '(sem histórico registrado para este lead)';
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Junta as mensagens que o lead enviou APÓS o último envio do sistema (por
+     * WhatsApp e/ou e-mail). É a "resposta atual" — o que deve ser interpretado
+     * pela triagem agora. Ignora mensagens anteriores ao último toque de saída,
+     * evitando que respostas antigas (testes/rodadas passadas) distorçam a decisão.
+     */
+    private function currentLeadReplyText($contactId)
+    {
+        // Momento do último envio do sistema (WhatsApp OU e-mail).
+        $refTs = 0;
+        try {
+            $wo = $this->db->fetch("SELECT MAX(timestamp) t FROM whatsapp_messages WHERE contact_id = ? AND from_me = 1", [$contactId]);
+            if ($wo && $wo['t']) $refTs = max($refTs, strtotime($wo['t']));
+        } catch (\Throwable $e) {}
+        try {
+            $eo = $this->db->fetch("SELECT MAX(sent_at) t FROM email_messages WHERE contact_id = ? AND direction='outbound'", [$contactId]);
+            if ($eo && $eo['t']) $refTs = max($refTs, strtotime($eo['t']));
+        } catch (\Throwable $e) {}
+
+        $parts = [];
+        // Mensagens de WhatsApp recebidas após o último envio. Considera texto E
+        // a transcrição de áudio (resposta por áudio: message_text vem vazio, mas
+        // a transcrição do Whisper carrega o conteúdo — ex.: recusa falada).
+        try {
+            $rows = $this->db->fetchAll(
+                "SELECT message_text, transcription, timestamp FROM whatsapp_messages
+                 WHERE contact_id = ? AND from_me = 0
+                   AND (
+                        (message_text IS NOT NULL AND message_text <> '')
+                     OR (transcription IS NOT NULL AND transcription <> '')
+                   )
+                 ORDER BY id DESC LIMIT 8", [$contactId]);
+            $rows = array_reverse($rows);
+            foreach ($rows as $m) {
+                if ($refTs > 0 && !empty($m['timestamp']) && strtotime($m['timestamp']) < $refTs) continue;
+                $txt = trim((string) ($m['message_text'] ?? ''));
+                if ($txt === '' && !empty($m['transcription'])) $txt = trim((string) $m['transcription']);
+                if ($txt === '') continue;
+                $parts[] = mb_substr($txt, 0, 300);
+            }
+        } catch (\Throwable $e) {
+            // Fallback para schema sem a coluna transcription: só texto.
+            try {
+                $rows = $this->db->fetchAll(
+                    "SELECT message_text, timestamp FROM whatsapp_messages
+                     WHERE contact_id = ? AND from_me = 0 AND message_text IS NOT NULL AND message_text <> ''
+                     ORDER BY id DESC LIMIT 8", [$contactId]);
+                $rows = array_reverse($rows);
+                foreach ($rows as $m) {
+                    if ($refTs > 0 && !empty($m['timestamp']) && strtotime($m['timestamp']) < $refTs) continue;
+                    $parts[] = mb_substr($m['message_text'], 0, 300);
+                }
+            } catch (\Throwable $e2) {}
+        }
+
+        // Resposta de e-mail recente (snippet). Prioriza a linha INBOUND real
+        // (direction='inbound') gravada pela detecção casada por cabeçalho, que
+        // carrega o texto real da resposta em reply_snippet + received_at. Cai no
+        // caminho antigo (replied_at na outbound) quando não houver inbound.
+        if (empty($parts)) {
+            try {
+                $em = $this->db->fetch(
+                    "SELECT reply_snippet, COALESCE(received_at, replied_at) AS ts
+                     FROM email_messages
+                     WHERE contact_id = ? AND reply_snippet IS NOT NULL AND reply_snippet <> ''
+                     ORDER BY id DESC LIMIT 1", [$contactId]);
+                if ($em && !empty($em['reply_snippet'])) {
+                    $emTs = !empty($em['ts']) ? strtotime($em['ts']) : 0;
+                    if (!($refTs > 0 && $emTs > 0 && $emTs < $refTs)) {
+                        $parts[] = mb_substr($em['reply_snippet'], 0, 300);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Fallback p/ schema sem reply_snippet/received_at.
+                try {
+                    $em = $this->db->fetch(
+                        "SELECT reply_snippet, replied_at FROM email_messages
+                         WHERE contact_id = ? AND replied_at IS NOT NULL ORDER BY replied_at DESC LIMIT 1", [$contactId]);
+                    if ($em && !empty($em['reply_snippet'])) {
+                        if (!($refTs > 0 && strtotime($em['replied_at']) < $refTs)) {
+                            $parts[] = mb_substr($em['reply_snippet'], 0, 300);
+                        }
+                    }
+                } catch (\Throwable $e2) {}
+            }
+        }
+
+        // Fallback: se nada após o último envio (ex.: sem timestamp confiável),
+        // usa a última mensagem recebida do lead (texto ou transcrição de áudio).
+        if (empty($parts)) {
+            try {
+                $last = $this->db->fetch(
+                    "SELECT message_text, transcription FROM whatsapp_messages
+                     WHERE contact_id = ? AND from_me = 0
+                       AND (
+                            (message_text IS NOT NULL AND message_text <> '')
+                         OR (transcription IS NOT NULL AND transcription <> '')
+                       )
+                     ORDER BY id DESC LIMIT 1", [$contactId]);
+                if ($last) {
+                    $txt = trim((string) ($last['message_text'] ?? ''));
+                    if ($txt === '' && !empty($last['transcription'])) $txt = trim((string) $last['transcription']);
+                    if ($txt !== '') $parts[] = mb_substr($txt, 0, 300);
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        return trim(implode(' | ', $parts));
+    }
+
+    /** Extrai o e-mail real do payload do Apollo (ignora placeholders bloqueados). */
+    private function extractRevealedEmail($person)
+    {
+        $isReal = fn($e) => !empty($e) && stripos($e, 'email_not_unlocked') === false && stripos($e, 'domain.com') === false && filter_var($e, FILTER_VALIDATE_EMAIL);
+        if ($isReal($person['email'] ?? null)) return $person['email'];
+        foreach (['personal_emails', 'contact_emails'] as $k) {
+            if (!empty($person[$k]) && is_array($person[$k])) {
+                foreach ($person[$k] as $item) {
+                    $v = is_array($item) ? ($item['email'] ?? null) : $item;
+                    if ($isReal($v)) return $v;
+                }
+            }
+        }
+        return null;
+    }
+
+    private function evalCondition($kind, $contactId, $participant = null)
+    {
+        // Considera a última mensagem enviada ao lead
+        $msg = $this->db->fetch(
+            "SELECT open_count, click_count, replied_at FROM email_messages
+             WHERE contact_id = ? AND direction='outbound' ORDER BY sent_at DESC LIMIT 1",
+            [$contactId]
+        );
+        switch ($kind) {
+            case 'opened': return $msg ? (int) $msg['open_count'] > 0 : false;
+            case 'clicked': return $msg ? (int) $msg['click_count'] > 0 : false;
+            case 'replied':
+            default:
+                // Respondeu por e-mail?
+                if ($msg && !empty($msg['replied_at'])) return true;
+                // Respondeu por WhatsApp? Qualquer mensagem recebida do lead
+                // (from_me=0) após o início da participação conta como resposta.
+                $since = $participant['started_at'] ?? null;
+                if ($since) {
+                    $wa = $this->db->fetch(
+                        "SELECT id FROM whatsapp_messages
+                         WHERE contact_id = ? AND from_me = 0 AND timestamp >= ? LIMIT 1",
+                        [$contactId, $since]
+                    );
+                } else {
+                    $wa = $this->db->fetch(
+                        "SELECT id FROM whatsapp_messages WHERE contact_id = ? AND from_me = 0 LIMIT 1",
+                        [$contactId]
+                    );
+                }
+                return (bool) $wa;
+        }
+    }
+
+    /**
+     * Cria (se necessário) uma etiqueta no CRM e a vincula ao contato.
+     * Usa as tabelas reais whatsapp_labels + whatsapp_contact_labels.
+     */
+    private function applyLabel($contactId, $label, $color = null)
+    {
+        $color = $color ?: '#00BFA6';
+        $row = $this->db->fetch("SELECT id FROM whatsapp_labels WHERE name = ? LIMIT 1", [$label]);
+        if ($row) {
+            $labelId = (int) $row['id'];
+        } else {
+            $labelId = $this->db->insert('whatsapp_labels', ['name' => $label, 'color' => $color]);
+        }
+        if (!$labelId) return;
+        try {
+            // UNIQUE (contact_id, label_id) evita duplicar
+            $this->db->query(
+                "INSERT IGNORE INTO whatsapp_contact_labels (contact_id, label_id) VALUES (?, ?)",
+                [$contactId, $labelId]
+            );
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /** Contato tem a etiqueta "sem interesse" vinculada? (bloqueia reprospecção). */
+    private function hasNoInterestLabel($contactId)
+    {
+        if (!$contactId) return false;
+        try {
+            $r = $this->db->fetch(
+                "SELECT 1 FROM whatsapp_contact_labels ccl
+                 JOIN whatsapp_labels l ON l.id = ccl.label_id
+                 WHERE ccl.contact_id = ? AND LOWER(l.name) IN ('sem interesse','sem interese') LIMIT 1",
+                [$contactId]
+            );
+            return (bool) $r;
+        } catch (\Throwable $e) { return false; }
+    }
+
+    private function moveCard($contactId, $columnId)
+    {
+        $board = new CrmBoard();
+        $card = $this->db->fetch(
+            "SELECT cc.id, cc.column_id, cur.position AS cur_pos, cur.board_id
+             FROM crm_cards cc
+             LEFT JOIN crm_columns cur ON cc.column_id = cur.id
+             WHERE cc.contact_id = ? ORDER BY cc.id DESC LIMIT 1",
+            [$contactId]
+        );
+        if (!$card) return;
+
+        // Já está na coluna de destino: nada a fazer.
+        if ((int)$card['column_id'] === (int)$columnId) return;
+
+        // Anti-regressão: não volta o card para uma etapa ANTERIOR do funil.
+        // Ex.: se já está em "Reunião", não retorna para "Qualificado" em um
+        // reprocessamento da sequência. Só bloqueia dentro do MESMO board.
+        $target = $this->db->fetch("SELECT position, board_id FROM crm_columns WHERE id = ?", [$columnId]);
+        if ($target && $card['board_id'] !== null
+            && (int)$target['board_id'] === (int)$card['board_id']
+            && $card['cur_pos'] !== null
+            && (int)$target['position'] < (int)$card['cur_pos']) {
+            return; // destino é uma coluna anterior → ignora
+        }
+
+        $board->moveCard($card['id'], $columnId, 0);
+        (new LeadTimelineService())->add($contactId, 'board_move', 'Card movido pela sequência', ['column_id' => $columnId]);
+    }
+
+    /**
+     * Resolve o destino de um bloco "move": aceita column_id fixo OU column_name
+     * (resolvido no board do card atual do lead — robusto entre instalações).
+     * Retorna o column_id destino, ou null se não encontrado.
+     */
+    private function resolveMoveColumn($contactId, $data)
+    {
+        $columnId = (int) ($data['column_id'] ?? 0);
+        if ($columnId) return $columnId;
+
+        $name = trim((string) ($data['column_name'] ?? ''));
+        if ($name === '') return null;
+
+        // Descobre o board a partir do card atual do lead; se não houver card,
+        // usa o board "Prospecção Automática" como padrão.
+        $card = $this->db->fetch(
+            "SELECT col.board_id FROM crm_cards cc
+             JOIN crm_columns col ON cc.column_id = col.id
+             WHERE cc.contact_id = ? ORDER BY cc.id DESC LIMIT 1",
+            [$contactId]
+        );
+        $boardId = $card['board_id'] ?? null;
+        if ($boardId) {
+            $col = $this->db->fetch(
+                "SELECT id FROM crm_columns WHERE board_id = ? AND name = ? ORDER BY position ASC LIMIT 1",
+                [$boardId, $name]
+            );
+        } else {
+            $col = $this->db->fetch(
+                "SELECT col.id FROM crm_columns col
+                 JOIN crm_boards b ON col.board_id = b.id
+                 WHERE b.name = 'Prospecção Automática' AND col.name = ?
+                 ORDER BY col.position ASC LIMIT 1",
+                [$name]
+            );
+        }
+        return $col['id'] ?? null;
+    }
+
+    /**
+     * Etapa LinkedIn (MANUAL): cria uma tarefa na fila "Minhas Ações" com a mensagem
+     * já preparada pela IA e registra na timeline. Idempotente por (participant, node):
+     * se já existe uma tarefa aberta desta etapa, não recria.
+     *
+     * NÃO envia nada ao LinkedIn. Nenhuma automação/scraping. O envio é feito à mão
+     * pelo vendedor, que depois confirma com "ENVIEI" (resumeAfterLinkedinTask).
+     */
+    /** A tabela linkedin_tasks existe? (migration 080 pode não ter rodado ainda.) */
+    private function linkedinTasksReady()
+    {
+        static $ready = null;
+        if ($ready !== null) return $ready;
+        try {
+            $r = $this->db->fetch(
+                "SELECT 1 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'linkedin_tasks'"
+            );
+            $ready = (bool) $r;
+        } catch (\Throwable $e) {
+            $ready = false;
+        }
+        return $ready;
+    }
+
+    private function doLinkedin($participant, $seq, $node)
+    {
+        $contactId = $participant['contact_id'];
+        $data = $node['data'] ?? [];
+
+        // Compatibilidade: se a migration 080 (tabela linkedin_tasks) ainda não foi
+        // aplicada, não quebra a sequência — apenas registra e segue.
+        if (!$this->linkedinTasksReady()) {
+            (new LeadTimelineService())->add(
+                $contactId,
+                'linkedin_task',
+                'Etapa LinkedIn ignorada: tabela linkedin_tasks ausente (aplique a migration 080).',
+                ['node_id' => $node['id']]
+            );
+            return true;
+        }
+
+        $taskModel = new LinkedinTask();
+        // Idempotência: não recria tarefa já aberta desta etapa.
+        $existing = $taskModel->findOpenByParticipantNode($participant['id'], $node['id']);
+        if ($existing) return true;
+
+        // SELECT resiliente: linkedin_url pode não existir antes da migration 080.
+        $contact = $this->db->fetch("SELECT * FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+
+        // Mensagem preparada ANTES de a tarefa aparecer (só dados reais; sem alucinação).
+        $gen = (new LinkedinMessageService())->generate($contactId, $node);
+
+        $actionType = $data['action_type'] ?? 'message';
+        $taskId = $taskModel->createIdempotent([
+            'contact_id' => $contactId,
+            'sequence_id' => $seq['id'] ?? null,
+            'participant_id' => $participant['id'],
+            'node_id' => $node['id'],
+            'assigned_to' => $contact['assigned_to'] ?? ($participant['added_by'] ?? null),
+            'action_type' => $actionType,
+            'objective' => $data['objective'] ?? null,
+            'linkedin_url' => $contact['linkedin_url'] ?? null,
+            'template_id' => !empty($data['template_id']) ? (int) $data['template_id'] : null,
+            'generated_message' => $gen['message'] ?? null,
+            'status' => LinkedinTask::S_READY,
+            'due_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        (new LeadTimelineService())->add(
+            $contactId,
+            'linkedin_task',
+            'Tarefa LinkedIn criada (' . $actionType . ') — aguardando envio manual.',
+            ['task_id' => $taskId, 'sequence_id' => $seq['id'] ?? null, 'node_id' => $node['id']]
+        );
+
+        return true;
+    }
+
+    /**
+     * Retoma a sequência após o vendedor confirmar o envio (ou pular) da tarefa
+     * LinkedIn. Reativa o participante PAUSADO neste nó e avança para o próximo.
+     * Chamado pelo LinkedinController ao "ENVIEI"/"PULAR".
+     *
+     * @return bool true se retomou; false se não havia nada a retomar.
+     */
+    public function resumeAfterLinkedinTask($participantId, $nodeId)
+    {
+        $participant = $this->db->fetch("SELECT * FROM sequence_participants WHERE id = ?", [$participantId]);
+        if (!$participant) return false;
+        // Só retoma se estava pausado exatamente neste nó (evita corridas).
+        if ($participant['status'] !== 'paused' || (string) $participant['current_node'] !== (string) $nodeId) {
+            return false;
+        }
+
+        $seq = $this->db->fetch("SELECT graph FROM email_sequences WHERE id = ?", [$participant['sequence_id']]);
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        $nodes = [];
+        foreach (($graph['nodes'] ?? []) as $n) $nodes[$n['id']] = $n;
+        $node = $nodes[$nodeId] ?? null;
+
+        // Reativa e avança para o próximo nó (respeita os delays: o próximo 'wait'
+        // reagenda normalmente no ciclo seguinte do cron).
+        $this->db->update('sequence_participants', ['status' => 'active'], 'id = ?', [$participantId]);
+        $participant['status'] = 'active';
+        $this->advance($participant, $node['next'] ?? null, $nodes);
+        return true;
+    }
+
+    // ---- helpers de fluxo ----
+
+    private function advance($participant, $nextNodeId, $nodes)
+    {
+        if (!$nextNodeId || !isset($nodes[$nextNodeId])) {
+            $this->finish($participant, 'completed');
+            return;
+        }
+        // Próximo nó roda na sequência imediatamente (mesma passada do cron não reprocessa
+        // para evitar loop; fica pronto para o próximo ciclo)
+        $this->db->update('sequence_participants', [
+            'current_node' => $nextNodeId,
+            'next_run_at' => date('Y-m-d H:i:s'),
+        ], 'id = ?', [$participant['id']]);
+    }
+
+    private function reschedule($participant, $when)
+    {
+        $this->db->update('sequence_participants', ['next_run_at' => $when], 'id = ?', [$participant['id']]);
+    }
+
+    /** Verifica se o grafo da sequência tem um bloco de reveal de telefone ativo. */
+    private function graphHasPhoneReveal($seq)
+    {
+        if (empty($seq['graph'])) return false;
+        $graph = json_decode($seq['graph'], true);
+        foreach ($graph['nodes'] ?? [] as $n) {
+            if (($n['type'] ?? '') === 'reveal_phone') {
+                $rp = $n['data']['reveal_phone'] ?? 1;
+                if (!empty($rp)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Verifica se o lead tem o canal necessário para um bloco:
+     *   'email'    → possui lead_email
+     *   'whatsapp' → possui telefone
+     * Usado para pular blocos cujo canal o lead não possui (sequências mistas).
+     */
+    private function contactHasChannel($contactId, $channel)
+    {
+        $c = $this->db->fetch("SELECT lead_email, phone FROM whatsapp_contacts WHERE id = ?", [$contactId]);
+        if (!$c) return false;
+        if ($channel === 'whatsapp') return !empty($c['phone']);
+        return !empty($c['lead_email']); // email (padrão)
+    }
+
+    /** Verifica (com cache) se uma coluna existe em sequence_participants. */
+    private function participantHasColumn($column)
+    {
+        static $cols = null;
+        if ($cols === null) {
+            $cols = [];
+            try {
+                $rows = $this->db->fetchAll(
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sequence_participants'"
+                );
+                foreach ($rows as $r) $cols[strtolower($r['COLUMN_NAME'])] = true;
+            } catch (\Throwable $e) { $cols = []; }
+        }
+        return isset($cols[strtolower($column)]);
+    }
+
+    private function finish($participant, $reason)
+    {
+        $this->db->update('sequence_participants', [
+            'status' => 'finished', 'stop_reason' => $reason,
+            'finished_at' => date('Y-m-d H:i:s'), 'next_run_at' => null,
+        ], 'id = ?', [$participant['id']]);
+
+        // Sequência esgotada (todos os toques enviados) e o lead NUNCA respondeu:
+        // move o card para "Sem Resposta" e marca perdido. Só para o encerramento
+        // natural ('completed'); 'unsubscribed'/'bounce'/'connected'/'no_email'
+        // têm desfechos próprios e não devem virar "sem resposta".
+        if ($reason === 'completed') {
+            try {
+                $contactId = $participant['contact_id'] ?? null;
+                if ($contactId && !$this->evalCondition('replied', $contactId, $participant)) {
+                    $this->markNoReplyOutcome($contactId);
+                }
+            } catch (\Throwable $e) {
+                Logger::error('SequenceEngine finish no-reply', ['contact' => $participant['contact_id'] ?? null, 'error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    private function logExec($participantId, $nodeId, $type, $result, $detail = null)
+    {
+        // Idempotência: attempt incremental por (participant, node)
+        $prev = $this->db->fetch("SELECT MAX(attempt) a FROM sequence_executions WHERE participant_id = ? AND node_id = ?", [$participantId, $nodeId]);
+        $attempt = (int) ($prev['a'] ?? 0) + 1;
+        try {
+            $this->db->insert('sequence_executions', [
+                'participant_id' => $participantId, 'node_id' => $nodeId,
+                'node_type' => $type, 'attempt' => $attempt, 'result' => $result, 'detail' => $detail,
+            ]);
+        } catch (\Throwable $e) { /* corrida — ignora duplicado */ }
+    }
+
+    private function waitSeconds($data)
+    {
+        $amount = max(0, (int) ($data['amount'] ?? 0));
+        $unit = $data['unit'] ?? 'days';
+        $map = ['minutes' => 60, 'hours' => 3600, 'days' => 86400];
+        return $amount * ($map[$unit] ?? 86400);
+    }
+
+    private function withinWindow($seq)
+    {
+        // Decisão centralizada em SequenceWindowRules (pura/testável): considera
+        // dias da semana (days_of_week), fim de semana (send_weekends) e horário.
+        return SequenceWindowRules::canSendNow(
+            $seq['window_start'] ?? '08:00:00',
+            $seq['window_end'] ?? '18:00:00',
+            $seq['days_of_week'] ?? null,
+            !empty($seq['send_weekends'])
+        );
+    }
+
+    private function nextWindowStart($seq)
+    {
+        // Próximo instante válido (dia permitido + dentro da janela).
+        $ts = SequenceWindowRules::nextSendTime(
+            $seq['window_start'] ?? '08:00:00',
+            $seq['window_end'] ?? '18:00:00',
+            $seq['days_of_week'] ?? null,
+            !empty($seq['send_weekends'])
+        );
+        return date('Y-m-d H:i:s', $ts);
+    }
+
+    /**
+     * Portão único de JANELA para blocos que ENVIAM mensagem (WhatsApp, resposta
+     * ao lead, agendamento). Se estiver fora da janela de horário/dias da
+     * sequência, reagenda o participante para o próximo horário válido e devolve
+     * false (o chamador deve interromper o passo, sem enviar).
+     *
+     * $manualForce (disparo manual do operador) e $testMode ignoram a janela — a
+     * ação é intencional/instantânea; o limite diário e demais regras seguem.
+     *
+     * @return bool true = pode enviar agora; false = reagendado, não envie.
+     */
+    private function enforceWindow($participant, $seq, $testMode, $manualForce)
+    {
+        if ($testMode || $manualForce) return true;
+        if ($this->withinWindow($seq)) return true;
+        $this->reschedule($participant, $this->nextWindowStart($seq));
+        return false;
+    }
+
+    private function sentToday($sequenceId)
+    {
+        // E-mails enviados hoje por esta sequência.
+        $r = $this->db->fetch(
+            "SELECT COUNT(*) t FROM email_messages m
+             JOIN sequence_participants sp ON sp.id = m.sequence_participant_id
+             WHERE sp.sequence_id = ? AND m.direction='outbound' AND DATE(m.sent_at) = CURDATE()",
+            [$sequenceId]
+        );
+        $emails = (int) ($r['t'] ?? 0);
+
+        // WhatsApp enviados hoje pela sequência (bug: o teto diário ignorava o
+        // WhatsApp e permitia estourar o daily_limit). Conta as mensagens
+        // outbound gravadas pelo motor (sender_name='Prospecção') para os
+        // contatos que participam desta sequência, no dia de hoje.
+        $wa = 0;
+        try {
+            $rw = $this->db->fetch(
+                "SELECT COUNT(*) t FROM whatsapp_messages wm
+                 JOIN sequence_participants sp ON sp.contact_id = wm.contact_id
+                 WHERE sp.sequence_id = ? AND wm.from_me = 1
+                   AND wm.sender_name = 'Prospecção' AND DATE(wm.timestamp) = CURDATE()",
+                [$sequenceId]
+            );
+            $wa = (int) ($rw['t'] ?? 0);
+        } catch (\Throwable $e) { /* se a coluna/tabela variar, ignora o WhatsApp no teto */ }
+
+        return $emails + $wa;
+    }
+
+    private function resolveAccount($accountId)
+    {
+        $am = new EmailAccount();
+        if ($accountId) {
+            $acc = $am->findById($accountId);
+            if ($acc && $acc['is_active']) return $acc;
+        }
+        // primeira conta ativa
+        $all = Database::getInstance()->fetch("SELECT * FROM email_accounts WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        return $all ?: null;
+    }
+
+    /**
+     * "Conta de envio" de WhatsApp: espelha resolveAccount() do e-mail.
+     * Usa a instância configurada na sequência (se ainda existir); caso contrário,
+     * cai na instância PADRÃO (is_default). Retorna a linha da instância ou null.
+     */
+    private function resolveWhatsappInstance($instanceId)
+    {
+        if ($instanceId) {
+            $inst = $this->db->fetch("SELECT id, connection_status FROM whatsapp_instances WHERE id = ? LIMIT 1", [(int)$instanceId]);
+            if ($inst) return $inst;
+        }
+        // fallback: instância padrão
+        $default = $this->db->fetch("SELECT id, connection_status FROM whatsapp_instances WHERE is_default = 1 LIMIT 1");
+        return $default ?: null;
+    }
+
+    /**
+     * "Dono do envio" de uma mensagem de WhatsApp disparada pela sequência —
+     * usado para gravar whatsapp_messages.sent_by (espelha resolveAccountOwner()
+     * do e-mail). Assim a conversa fica visível no chat de quem "enviou", mesmo
+     * quando o disparo é automático (sem usuário logado).
+     *
+     * Ordem de resolução:
+     *   1. Usuário dono da instância (whatsapp_instances.user_id).
+     *   2. Primeiro super_admin ativo (último recurso; mantém um dono válido).
+     * Retorna o id do usuário ou null (coluna é NULLABLE).
+     */
+    private function resolveInstanceOwner($instanceId)
+    {
+        if ($instanceId) {
+            $inst = $this->db->fetch("SELECT user_id FROM whatsapp_instances WHERE id = ? LIMIT 1", [(int)$instanceId]);
+            if (!empty($inst['user_id'])) return (int) $inst['user_id'];
+        }
+        $adm = $this->db->fetch("SELECT id FROM users WHERE role = 'super_admin' AND is_active = 1 ORDER BY id ASC LIMIT 1");
+        return $adm['id'] ?? null;
+    }
+
+    private function render($text, $contact)
+    {
+        // Usa o renderizador único de templates (mesmas variáveis em toda a plataforma)
+        return MessageTemplate::render($text, $contact);
+    }
+
+    /**
+     * Cria/roda um follow-up simples pós-envio manual, sem editor:
+     * gera uma sequência mínima "espera N + condição respondeu + envio".
+     */
+    public function createSimpleFollowUp($contactId, $waitAmount, $waitUnit, $subject, $body, $userId = null)
+    {
+        $graph = [
+            'start' => 'w1',
+            'nodes' => [
+                ['id' => 'w1', 'type' => 'wait', 'data' => ['amount' => $waitAmount, 'unit' => $waitUnit], 'next' => 'c1'],
+                ['id' => 'c1', 'type' => 'condition', 'data' => ['kind' => 'replied'], 'nextYes' => 'e1', 'nextNo' => 's1'],
+                ['id' => 's1', 'type' => 'send', 'data' => ['subject' => $subject, 'body' => $body], 'next' => 'e1'],
+                ['id' => 'e1', 'type' => 'end'],
+            ],
+        ];
+        $seqId = $this->db->insert('email_sequences', [
+            'name' => 'Follow-up simples · ' . date('d/m H:i'),
+            'description' => 'Gerado automaticamente após envio manual.',
+            'graph' => json_encode($graph, JSON_UNESCAPED_UNICODE),
+            'is_active' => 1,
+            'created_by' => $userId,
+        ]);
+        return $this->enroll($seqId, $contactId, $userId);
+    }
+
+    // ============ Acompanhamento (visão legível do estado) ============
+
+    /**
+     * Rótulos humanos por tipo de nó (espelham os NODE_LABELS do editor visual).
+     */
+    public static function nodeTypeLabel($type)
+    {
+        $map = [
+            'send' => 'Enviar e-mail',
+            'whatsapp' => 'Enviar WhatsApp',
+            'linkedin' => 'LinkedIn (tarefa)',
+            'wait' => 'Aguardar',
+            'condition' => 'Condição',
+            'tag' => 'Etiqueta',
+            'score' => 'Score',
+            'move' => 'Mover card',
+            'reveal_phone' => 'Revelar telefone',
+            'end' => 'Encerrar',
+        ];
+        return $map[$type] ?? ($type ?: '—');
+    }
+
+    /**
+     * Descrição legível de um nó específico do grafo (ex.: "Aguardar 4 min",
+     * "Condição — Se respondeu?", "Enviar e-mail — Assunto: ...").
+     */
+    public static function nodeDescribe($node)
+    {
+        if (!$node || empty($node['type'])) return '—';
+        $type = $node['type'];
+        $d = $node['data'] ?? [];
+        $label = self::nodeTypeLabel($type);
+        switch ($type) {
+            case 'send':
+                $subj = trim($d['subject'] ?? '');
+                return $label . ($subj !== '' ? ' — ' . $subj : '');
+            case 'wait':
+                $amount = (int) ($d['amount'] ?? 0);
+                $unitMap = ['minutes' => 'min', 'hours' => 'h', 'days' => 'dias'];
+                $unit = $unitMap[$d['unit'] ?? 'days'] ?? 'dias';
+                return $label . ' ' . $amount . ' ' . $unit;
+            case 'condition':
+                $kindMap = ['replied' => 'Se respondeu?', 'opened' => 'Se abriu?', 'clicked' => 'Se clicou?'];
+                return $label . ' — ' . ($kindMap[$d['kind'] ?? 'replied'] ?? '?');
+            case 'tag':
+                return $label . (trim($d['label'] ?? '') !== '' ? ' — ' . $d['label'] : '');
+            case 'score':
+                $delta = (int) ($d['delta'] ?? 0);
+                return $label . ' ' . ($delta > 0 ? '+' : '') . $delta;
+            case 'linkedin':
+                $actMap = ['connect' => 'Solicitar conexão', 'message' => '1ª mensagem', 'followup' => 'Follow-up', 'final' => 'Mensagem final'];
+                return $label . ' — ' . ($actMap[$d['action_type'] ?? 'message'] ?? 'Ação');
+            default:
+                return $label;
+        }
+    }
+
+    /**
+     * Rótulo legível do RESULTADO de um passo no histórico, conforme o tipo do nó.
+     * Ex.: send/done => "E-mail enviado"; send/failed => "Falha ao enviar";
+     * wait/waiting => "Aguardando"; linkedin/waiting => "Tarefa criada (aguardando)".
+     */
+    public static function resultLabel($type, $result)
+    {
+        if ($type === 'send') {
+            if ($result === 'done') return 'E-mail enviado';
+            if ($result === 'failed') return 'Falha ao enviar e-mail';
+        }
+        if ($type === 'whatsapp') {
+            if ($result === 'done') return 'WhatsApp enviado';
+            if ($result === 'failed') return 'Falha ao enviar WhatsApp';
+        }
+        if ($type === 'wait' && $result === 'waiting') return 'Aguardando';
+        if ($type === 'linkedin' && $result === 'waiting') return 'Tarefa criada (aguardando ação)';
+        if ($type === 'condition') return 'Condição avaliada';
+        $map = ['done' => 'Executado', 'failed' => 'Falhou', 'waiting' => 'Aguardando', 'skipped' => 'Pulado'];
+        return $map[$result] ?? ($result ?: '—');
+    }
+
+    /**
+     * Monta avisos LEGÍVEIS (impedido / pausado / pulado / aguardando) com o motivo
+     * real, para o painel de acompanhamento. Cada aviso: {level, text}.
+     * level: 'danger' (impediu/falhou), 'warning' (pausado/aguardando ação),
+     *        'info' (aguardando tempo / andamento normal).
+     */
+    private function buildAlerts($participant, $curNode, array $history, $waitUntil)
+    {
+        $alerts = [];
+        $status = $participant['status'] ?? '';
+        $reason = $participant['stop_reason'] ?? '';
+
+        // Impedimento ATUAL (não histórico): só é "impedimento vermelho" a falha que
+        // está travando o participante AGORA. Como o motor de alguns nós (ex.:
+        // WhatsApp) registra 'failed' mas AVANÇA mesmo assim, uma falha antiga NÃO
+        // pode continuar aparecendo como impedimento atual depois que o fluxo já
+        // seguiu adiante. Por isso só consideramos falhas que:
+        //   (a) estão na CAUDA do histórico (as últimas execuções seguidas foram
+        //       falhas da MESMA etapa — ou seja, o lead está preso ali agora), ou
+        //   (b) o participante está com status 'failed'.
+        // Falhas já superadas (o fluxo avançou para outra etapa depois delas) viram
+        // apenas parte do histórico, sem alarme vermelho.
+        $tailFails = [];
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            $h = $history[$i];
+            if (($h['result'] ?? '') === 'failed') {
+                $tailFails[] = $h;
+                continue;
+            }
+            // Encontrou uma execução que NÃO falhou: a "cauda de falhas" terminou.
+            // Tudo antes disso é falha já superada (não é impedimento atual).
+            break;
+        }
+
+        if (!empty($tailFails)) {
+            // Agrupa a cauda de falhas por etapa + motivo (várias tentativas do mesmo
+            // erro viram um único aviso com a contagem), mantendo o motivo real.
+            $failGroups = [];
+            foreach ($tailFails as $h) {
+                $why = !empty($h['detail']) ? trim($h['detail']) : '';
+                $key = ($h['step'] ?? '') . '|' . $why;
+                if (!isset($failGroups[$key])) {
+                    $failGroups[$key] = ['step' => $h['step'] ?? '', 'why' => $why, 'count' => 0];
+                }
+                $failGroups[$key]['count']++;
+            }
+            foreach ($failGroups as $g) {
+                $times = $g['count'] > 1 ? (' (' . $g['count'] . ' tentativas)') : '';
+                $whyTxt = $g['why'] !== '' ? (' — ' . $g['why']) : '';
+                $alerts[] = ['level' => 'danger', 'text' => 'Etapa "' . $g['step'] . '" não foi concluída' . $whyTxt . $times];
+            }
+        }
+
+        // Estado final/interrompido com motivo.
+        if ($status === 'finished') {
+            $reasonMap = [
+                'completed' => 'Sequência concluída normalmente.',
+                'replied' => 'Interrompida porque o lead respondeu.',
+                'unsubscribed' => 'Interrompida: lead descadastrado.',
+                'bounce' => 'Interrompida: e-mail inválido (bounce).',
+                'no_email' => 'Impedida: o lead não tem e-mail cadastrado.',
+                'no_account' => 'Impedida: nenhuma conta de e-mail ativa configurada para envio.',
+            ];
+            $lvl = in_array($reason, ['no_email', 'no_account', 'bounce'], true) ? 'danger' : 'info';
+            $alerts[] = ['level' => $lvl, 'text' => $reasonMap[$reason] ?? ('Finalizada (' . ($reason ?: 'concluída') . ').')];
+        } elseif ($status === 'stopped') {
+            $alerts[] = ['level' => 'warning', 'text' => 'Execução interrompida' . ($reason ? ' — ' . $reason : '') . '.'];
+        } elseif ($status === 'failed') {
+            $alerts[] = ['level' => 'danger', 'text' => 'Execução falhou' . ($reason ? ' — ' . $reason : '') . '.'];
+        } elseif ($status === 'paused') {
+            if (($curNode['type'] ?? '') === 'linkedin') {
+                $alerts[] = ['level' => 'warning', 'text' => 'Pausado no LinkedIn: uma tarefa manual foi criada em CRM → Minhas Ações. A sequência só avança quando o vendedor confirmar o envio.'];
+            } else {
+                $alerts[] = ['level' => 'warning', 'text' => 'Participante pausado.'];
+            }
+        } else { // active
+            $type = $curNode['type'] ?? null;
+            // Se há uma espera pendente (next_run_at no futuro), o lead está
+            // AGUARDANDO — independentemente do tipo do nó atual (um 'wait' pode já
+            // ter avançado o current_node para a próxima etapa e mesmo assim estar
+            // dentro do tempo de espera). Prioriza esse aviso.
+            if ($waitUntil) {
+                $alerts[] = ['level' => 'info', 'text' => 'Aguardando o tempo configurado. Próxima execução prevista para ' . $waitUntil . '.'];
+            } elseif ($type === 'condition') {
+                $alerts[] = ['level' => 'info', 'text' => 'Aguardando resposta para avaliar a condição. Enquanto não responder, seguirá pelo caminho "Não".'];
+            } elseif ($type === 'send') {
+                $alerts[] = ['level' => 'info', 'text' => 'Pronto para enviar e-mail na próxima execução.'];
+            } elseif ($type === 'linkedin') {
+                $alerts[] = ['level' => 'info', 'text' => 'Pronto para gerar a tarefa de LinkedIn na próxima execução.'];
+            }
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Rótulo da coluna "Etapa atual" no acompanhamento.
+     * Quando há espera pendente ($waitUntil), o current_node já aponta para a
+     * PRÓXIMA etapa (o nó 'wait' avança ao agendar). Para não dar a impressão de
+     * que a espera foi pulada, mostramos "Aguardando (próxima: <etapa>)". Sem
+     * espera pendente, mostra a descrição normal do nó atual.
+     */
+    private function currentStepLabel($curNode, $waitUntil)
+    {
+        if (!$curNode) return '—';
+        $desc = self::nodeDescribe($curNode);
+        if ($waitUntil) {
+            return 'Aguardando (próxima: ' . $desc . ')';
+        }
+        return $desc;
+    }
+
+    /**
+     * Status legível do participante para a tela de acompanhamento.
+     * Considera o status do registro e o tipo do nó atual.
+     */
+    private function participantStatusText($participant, $currentNode)
+    {
+        $status = $participant['status'] ?? '';
+        $type = $currentNode['type'] ?? null;
+
+        if ($status === 'finished') {
+            $reasonMap = [
+                'completed' => 'Concluída', 'replied' => 'Respondeu', 'unsubscribed' => 'Descadastrado',
+                'bounce' => 'E-mail inválido (bounce)', 'no_email' => 'Sem e-mail', 'no_account' => 'Sem conta de envio',
+            ];
+            return 'Finalizado — ' . ($reasonMap[$participant['stop_reason'] ?? ''] ?? ($participant['stop_reason'] ?: 'concluída'));
+        }
+        if ($status === 'stopped') return 'Interrompido' . (!empty($participant['stop_reason']) ? ' — ' . $participant['stop_reason'] : '');
+        if ($status === 'failed') return 'Falhou' . (!empty($participant['stop_reason']) ? ' — ' . $participant['stop_reason'] : '');
+        if ($status === 'paused') {
+            if ($type === 'linkedin') return 'Aguardando ação no LinkedIn (Minhas Ações)';
+            return 'Pausado';
+        }
+        // Ativo com espera pendente (next_run_at no futuro): está aguardando o tempo,
+        // mesmo que o current_node já seja a próxima etapa (um 'wait' avança o nó ao
+        // agendar). Detecta pelo horário para não depender do tipo do nó atual.
+        if ($status === 'active' && !empty($participant['next_run_at']) && strtotime($participant['next_run_at']) > time()) {
+            return 'Aguardando';
+        }
+        // Ativo: detalha pelo tipo do nó atual
+        if ($type === 'wait') return 'Aguardando';
+        if ($type === 'condition') return 'Aguardando resposta';
+        if ($type === 'send') return 'Pronto para enviar e-mail';
+        if ($type === 'linkedin') return 'Pronto para tarefa de LinkedIn';
+        return 'Ativo';
+    }
+
+    /**
+     * Monta a visão legível de acompanhamento de TODOS os participantes de uma
+     * sequência: etapa atual, última etapa executada, próxima etapa, status e,
+     * quando em "Aguardar", até quando deve esperar (next_run_at).
+     * Somente leitura — não altera estado nem executa nada.
+     * @return array {sequence, participants:[...]}
+     */
+    public function progress($sequenceId)
+    {
+        $seq = $this->db->fetch("SELECT id, name, graph FROM email_sequences WHERE id = ?", [$sequenceId]);
+        if (!$seq) return ['error' => 'Sequência não encontrada.'];
+
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        $nodes = [];
+        foreach (($graph['nodes'] ?? []) as $n) $nodes[$n['id']] = $n;
+        $startId = $graph['start'] ?? ($graph['nodes'][0]['id'] ?? null);
+
+        $rows = $this->db->fetchAll(
+            "SELECT sp.*, COALESCE(wc.contact_name, wc.push_name, wc.lead_email) AS lead_name, wc.lead_email
+             FROM sequence_participants sp
+             JOIN whatsapp_contacts wc ON sp.contact_id = wc.id
+             WHERE sp.sequence_id = ?
+             ORDER BY sp.status = 'active' DESC, sp.next_run_at ASC, sp.id ASC",
+            [$sequenceId]
+        );
+
+        $out = [];
+        foreach ($rows as $p) {
+            // Nó atual: se null, o próximo a rodar é o start.
+            $curId = $p['current_node'] ?: $startId;
+            $curNode = $curId && isset($nodes[$curId]) ? $nodes[$curId] : null;
+
+            // Próxima etapa: para nós lineares é o "next"; para condição depende do
+            // ramo (mostramos ambos de forma resumida). Só informativo.
+            $nextLabel = null;
+            if ($curNode) {
+                if (($curNode['type'] ?? '') === 'condition') {
+                    $yes = isset($nodes[$curNode['nextYes'] ?? '']) ? self::nodeDescribe($nodes[$curNode['nextYes']]) : '—';
+                    $no = isset($nodes[$curNode['nextNo'] ?? '']) ? self::nodeDescribe($nodes[$curNode['nextNo']]) : '—';
+                    $nextLabel = 'Sim → ' . $yes . ' | Não → ' . $no;
+                } else {
+                    $nx = $curNode['next'] ?? null;
+                    $nextLabel = ($nx && isset($nodes[$nx])) ? self::nodeDescribe($nodes[$nx]) : ('end' === ($curNode['type'] ?? '') ? '—' : 'Fim da sequência');
+                }
+            }
+
+            // Histórico COMPLETO de etapas executadas (mostra que nada foi "pulado":
+            // cada nó por onde o lead passou fica registrado, com resultado e motivo).
+            $execRows = $this->db->fetchAll(
+                "SELECT node_id, node_type, result, detail, executed_at
+                 FROM sequence_executions WHERE participant_id = ?
+                 ORDER BY executed_at ASC, id ASC",
+                [$p['id']]
+            );
+            $history = [];
+            foreach ($execRows as $ex) {
+                $exNode = isset($nodes[$ex['node_id']]) ? $nodes[$ex['node_id']] : ['type' => $ex['node_type']];
+                $history[] = [
+                    'step' => self::nodeDescribe($exNode),
+                    'type' => $ex['node_type'],
+                    'result' => $ex['result'],
+                    'result_label' => self::resultLabel($ex['node_type'], $ex['result']),
+                    'detail' => $ex['detail'] ?: null,
+                    'at' => $ex['executed_at'],
+                ];
+            }
+            // Histórico da EXECUÇÃO ATUAL (não mistura com execuções anteriores).
+            // Como a reinscrição reaproveita o mesmo participant_id e mantém as
+            // linhas antigas em sequence_executions, delimitamos a execução atual
+            // pela ÚLTIMA vez em que o fluxo passou pelo nó inicial (start): toda
+            // execução começa por ele. Tudo a partir daí é a execução corrente.
+            // Isso usa apenas dados REAIS já registrados — não reconstrói nem estima.
+            $currentStart = 0;
+            if ($startId) {
+                for ($i = count($execRows) - 1; $i >= 0; $i--) {
+                    if (($execRows[$i]['node_id'] ?? null) === $startId) { $currentStart = $i; break; }
+                }
+            }
+            $historyCurrent = array_slice($history, $currentStart);
+
+            $last = !empty($execRows) ? end($execRows) : null;
+            $lastLabel = null;
+            if ($last) {
+                $lastNode = isset($nodes[$last['node_id']]) ? $nodes[$last['node_id']] : ['type' => $last['node_type']];
+                $lastLabel = self::nodeDescribe($lastNode);
+            }
+
+            // "Aguardar até": o participante está em espera sempre que estiver ATIVO
+            // e tiver um next_run_at no FUTURO. Isso cobre dois casos:
+            //   (1) o nó atual é 'wait' (espera explícita), e
+            //   (2) um nó 'wait' já rodou e avançou o current_node para a próxima
+            //       etapa, mas o next_run_at ainda está no futuro (a etapa seguinte
+            //       só roda quando o tempo vencer). Antes esse caso mostrava "—",
+            //       dando a impressão errada de que a espera não foi respeitada.
+            $waitUntil = null;
+            $isActive = ($p['status'] ?? '') === 'active';
+            if ($isActive && !empty($p['next_run_at']) && strtotime($p['next_run_at']) > time()) {
+                $waitUntil = $p['next_run_at'];
+            }
+
+            // Avisos: impedido / pausado / pulado / aguardando — com o motivo real.
+            // Usa o histórico da EXECUÇÃO ATUAL (não considera falhas de execuções
+            // anteriores já superadas).
+            $alerts = $this->buildAlerts($p, $curNode, $historyCurrent, $waitUntil);
+
+            $out[] = [
+                'participant_id' => (int) $p['id'],
+                'lead_name' => $p['lead_name'] ?: ('Lead #' . $p['contact_id']),
+                'lead_email' => $p['lead_email'] ?? null,
+                'status' => $p['status'],
+                'status_text' => $this->participantStatusText($p, $curNode),
+                'current_step' => $this->currentStepLabel($curNode, $waitUntil),
+                'current_type' => $curNode['type'] ?? null,
+                'last_step' => $lastLabel ?: '—',
+                'last_result' => $last['result'] ?? null,
+                'last_at' => $last['executed_at'] ?? null,
+                'next_step' => $nextLabel ?: '—',
+                'next_run_at' => $p['next_run_at'] ?? null,
+                'wait_until' => $waitUntil,
+                'history' => $history,
+                'history_current' => $historyCurrent,
+                'alerts' => $alerts,
+            ];
+        }
+
+        return ['sequence' => ['id' => (int) $seq['id'], 'name' => $seq['name']], 'participants' => $out];
+    }
+
+    /**
+     * Resume, de forma LEGÍVEL, o que aconteceu com um participante durante uma
+     * passada do disparo manual: nome do lead, o que foi executado, etapa atual,
+     * status e "aguardar até" (quando aplicável). Usado só pelo coletor do runNow.
+     * @param int   $participantId
+     * @param array $stepResults resultados brutos dos passos ('sent','skipped',...)
+     * @return array linha legível
+     */
+    private function summarizeRun($participantId, array $stepResults)
+    {
+        $p = $this->db->fetch(
+            "SELECT sp.*, COALESCE(wc.contact_name, wc.push_name, wc.lead_email) AS lead_name
+             FROM sequence_participants sp
+             JOIN whatsapp_contacts wc ON sp.contact_id = wc.id
+             WHERE sp.id = ?",
+            [$participantId]
+        );
+        $name = $p['lead_name'] ?? ('Lead #' . $participantId);
+
+        // Grafo para descrever o nó atual.
+        $seq = $this->db->fetch("SELECT graph FROM email_sequences WHERE id = ?", [$p['sequence_id'] ?? 0]);
+        $graph = json_decode($seq['graph'] ?? '{}', true);
+        $nodes = [];
+        foreach (($graph['nodes'] ?? []) as $n) $nodes[$n['id']] = $n;
+        $startId = $graph['start'] ?? ($graph['nodes'][0]['id'] ?? null);
+        $curId = $p['current_node'] ?: $startId;
+        $curNode = ($curId && isset($nodes[$curId])) ? $nodes[$curId] : null;
+
+        // O que foi feito nesta passada, com base nos resultados dos passos.
+        $sent = count(array_filter($stepResults, fn($r) => $r === 'sent'));
+        $hadError = in_array('error', $stepResults, true);
+        $actions = [];
+        if ($sent > 0) $actions[] = ($sent === 1 ? 'Envio realizado' : ($sent . ' envios realizados'));
+        if ($hadError) $actions[] = 'erro durante a execução';
+        if (empty($actions)) $actions[] = 'nenhuma ação executável nesta passada';
+
+        // Espera pendente: ativo com next_run_at no futuro (mesma regra do progress()).
+        $waitUntil = null;
+        if (($p['status'] ?? '') === 'active' && !empty($p['next_run_at']) && strtotime($p['next_run_at']) > time()) {
+            $waitUntil = $p['next_run_at'];
+        }
+
+        $line = [
+            'participant_id' => (int) $participantId,
+            'lead_name' => $name,
+            'did' => implode('; ', $actions),
+            'status' => $p['status'] ?? '',
+            'status_text' => $this->participantStatusText($p, $curNode),
+            'current_step' => $this->currentStepLabel($curNode, $waitUntil),
+            'current_type' => $curNode['type'] ?? null,
+            'wait_until' => $waitUntil,
+            'next_run_at' => $p['next_run_at'] ?? null,
+        ];
+        return $line;
+    }
+}

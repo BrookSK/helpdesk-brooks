@@ -1,0 +1,759 @@
+<?php
+
+class SettingsController extends Controller
+{
+    public function index()
+    {
+        $this->requireRole(['super_admin']);
+        $user = $this->currentUser();
+        $settings = Config::getAll();
+        $whatsappGroups = (new WhatsappContact())->getAllGroups();
+        $dbInfo = $this->detectDatabaseInfo();
+
+        // Assinaturas de e-mail por domínio (tabela pode não existir ainda)
+        $emailSignatures = [];
+        try {
+            $emailSignatures = Database::getInstance()->fetchAll("SELECT * FROM email_signatures ORDER BY domain ASC");
+        } catch (\Throwable $e) { $emailSignatures = []; }
+
+        // Chaves de API por empresa (uma por empresa). Mapa company_id => chave.
+        // Degrada sem quebrar a tela se a migration 133 não tiver sido aplicada.
+        $apiKeysByCompany = [];
+        try {
+            $apiKeysByCompany = (new ApiKey())->keysByCompany();
+        } catch (\Throwable $e) { $apiKeysByCompany = []; }
+        $companies = (new Company())->getAll();
+
+        $this->view('admin/settings', [
+            'user' => $user,
+            'settings' => $settings,
+            'whatsappGroups' => $whatsappGroups,
+            'dbInfo' => $dbInfo,
+            'emailSignatures' => $emailSignatures,
+            'apiKeysByCompany' => $apiKeysByCompany,
+            'companies' => $companies,
+        ]);
+    }
+
+    /**
+     * Página dedicada com a documentação (funcional) da API de demandas.
+     * Acessível pelo botão "Documentação da API de demandas" em Configurações.
+     * Mostra os valores já resolvidos para o ambiente atual (endpoint, cron).
+     */
+    public function apiDocs()
+    {
+        $this->requireRole(['super_admin']);
+        $settings = Config::getAll();
+        $this->view('admin/api-docs', [
+            'user' => $this->currentUser(),
+            'settings' => $settings,
+        ]);
+    }
+
+    /**
+     * Detecta qual banco está em uso e o ambiente (produção/beta).
+     * Reflete a mesma lógica de detecção do config/database.php.
+     */
+    private function detectDatabaseInfo(): array
+    {
+        $configFile = BASE_PATH . '/config/database.php';
+        $config = file_exists($configFile) ? require $configFile : [];
+        $dbName = $config['database'] ?? '';
+
+        // Descobrir a branch detectada (mesmas duas camadas do config)
+        $branch = 'main';
+        $source = 'default';
+        $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        if ($host !== '' && (str_contains($host, 'plesk.page') || str_contains($host, 'beta'))) {
+            $branch = 'beta';
+            $source = 'host';
+        } else {
+            $headFile = BASE_PATH . '/.git/HEAD';
+            if (file_exists($headFile)) {
+                $head = trim(file_get_contents($headFile));
+                if (str_starts_with($head, 'ref: refs/heads/')) {
+                    $branch = substr($head, strlen('ref: refs/heads/'));
+                    $source = 'git';
+                }
+            }
+        }
+
+        $isProduction = ($branch === 'main');
+
+        return [
+            'database'    => $dbName,
+            'host'        => $config['host'] ?? '',
+            'username'    => $config['username'] ?? '',
+            'environment' => $isProduction ? 'production' : 'beta',
+            'branch'      => $branch,
+            'source'      => $source, // host | git | default
+            'http_host'   => $host,
+        ];
+    }
+
+    public function save()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('settings');
+        }
+
+        $fields = [
+            'app_name', 'app_email',
+            'smtp_host', 'smtp_port', 'smtp_username', 'smtp_password',
+            'smtp_encryption', 'smtp_from_name', 'smtp_from_email',
+            'openai_api_key',
+            'buffer_api_key',
+            'apollo_api_key', 'apollo_base_url', 'apollo_webhook_token',
+            // (As chaves secretas da esteira — clicksign/asaas/lrv — são tratadas
+            //  separadamente abaixo: campo em branco PRESERVA o valor já salvo.)
+            'app_public_url',
+            'google_client_id', 'google_client_secret', 'google_refresh_token', 'google_calendar_id',
+            // Agendamento público (bloco "Agendamento" das sequências)
+            'booking_min_advance_days', 'booking_work_start', 'booking_work_end',
+            'booking_slot_minutes', 'booking_days_of_week', 'booking_duration_min',
+            'booking_notify_hours_before', 'booking_link_expiry_days',
+            // Relatório Diário (RDO)
+            'rdo_deadline_time',
+            'webhook_url', 'webhook_phones', 'webhook_names', 'webhook_enabled',
+            'webhook_message_template',
+            'whatsapp_number', 'whatsapp_message', 'whatsapp_enabled',
+            'whatsapp_default_group_jid', 'whatsapp_group_notify_enabled',
+            'cron_token',
+            'linkedin_client_id', 'linkedin_client_secret', 'linkedin_scopes',
+            // Nvoip (telefonia) — campos não-secretos
+            'nvoip_auth_base_url', 'nvoip_base_url', 'nvoip_oauth_client_id',
+            'nvoip_oauth_scopes', 'nvoip_caller',
+            // Nvoip webphone (WSS) — config global (ramal/senha SIP são por usuário)
+            'nvoip_ws_server', 'nvoip_sip_domain', 'nvoip_ice_servers', 'nvoip_dial_format',
+        ];
+
+        foreach ($fields as $field) {
+            if (isset($_POST[$field])) {
+                Config::set($field, trim($_POST[$field]));
+            }
+        }
+
+        // Nvoip client credential é SECRETO: só atualiza quando um novo valor for informado.
+        // Deixar o campo em branco preserva a credencial já salva (nunca é reexibida no frontend).
+        if (isset($_POST['nvoip_oauth_client_credential']) && trim($_POST['nvoip_oauth_client_credential']) !== '') {
+            Config::set('nvoip_oauth_client_credential', trim($_POST['nvoip_oauth_client_credential']));
+        }
+
+        // Chaves SECRETAS da esteira comercial (ClickSign/Asaas/LRV): só atualiza
+        // quando o campo vem PREENCHIDO. Em branco, mantém o valor salvo — evita
+        // apagar a chave sem querer quando o campo password volta vazio no POST.
+        $secretFields = [
+            'clicksign_access_token', 'clicksign_webhook_secret',
+            'asaas_webhook_token',
+            'lrv_cloud_api_key', 'lrv_cloud_webhook_secret',
+        ];
+        foreach ($secretFields as $sf) {
+            if (isset($_POST[$sf]) && trim($_POST[$sf]) !== '') {
+                Config::set($sf, trim($_POST[$sf]));
+            }
+        }
+
+
+
+        // === Tokens dinâmicos: Meta (array meta_tokens[]) ===
+        if (isset($_POST['meta_tokens']) && is_array($_POST['meta_tokens'])) {
+            // Limpa todos os tokens Meta antigos (até 20)
+            Config::set('meta_access_token', '');
+            for ($i = 2; $i <= 20; $i++) {
+                Config::set('meta_access_token_' . $i, '');
+            }
+            // Salva os novos (filtra vazios)
+            $metaTokens = array_values(array_filter(array_map('trim', $_POST['meta_tokens'])));
+            foreach ($metaTokens as $idx => $token) {
+                $key = $idx === 0 ? 'meta_access_token' : 'meta_access_token_' . ($idx + 1);
+                Config::set($key, $token);
+            }
+            Config::set('meta_token_status', '');
+            Config::set('meta_token_checked_at', '');
+        }
+
+        // === Tokens dinâmicos: LinkedIn (array linkedin_tokens[]) ===
+        if (isset($_POST['linkedin_tokens']) && is_array($_POST['linkedin_tokens'])) {
+            Config::set('linkedin_access_token', '');
+            for ($i = 2; $i <= 20; $i++) {
+                Config::set('linkedin_access_token_' . $i, '');
+            }
+            $linkedinTokens = array_values(array_filter(array_map('trim', $_POST['linkedin_tokens'])));
+            foreach ($linkedinTokens as $idx => $token) {
+                $key = $idx === 0 ? 'linkedin_access_token' : 'linkedin_access_token_' . ($idx + 1);
+                Config::set($key, $token);
+            }
+            Config::set('linkedin_token_status', '');
+            Config::set('linkedin_token_checked_at', '');
+        }
+
+        // Checkboxes
+        if (!isset($_POST['webhook_enabled'])) {
+            Config::set('webhook_enabled', '0');
+        }
+        if (!isset($_POST['whatsapp_enabled'])) {
+            Config::set('whatsapp_enabled', '0');
+        }
+        if (!isset($_POST['whatsapp_group_notify_enabled'])) {
+            Config::set('whatsapp_group_notify_enabled', '0');
+        }
+        // Buffer: modo teste/simulação (não chama a API real ao agendar)
+        Config::set('buffer_test_mode', isset($_POST['buffer_test_mode']) ? '1' : '0');
+        // ClickSign: ambiente de testes (sandbox) — checkbox
+        Config::set('clicksign_sandbox', isset($_POST['clicksign_sandbox']) ? '1' : '0');
+
+        // Upload de Logo
+        if (!empty($_FILES['app_logo']['name']) && $_FILES['app_logo']['error'] === UPLOAD_ERR_OK) {
+            $logoPath = $this->uploadBrandFile($_FILES['app_logo'], 'logo');
+            if ($logoPath) {
+                Config::set('app_logo', $logoPath);
+            }
+        }
+
+        // Upload de Favicon
+        if (!empty($_FILES['app_favicon']['name']) && $_FILES['app_favicon']['error'] === UPLOAD_ERR_OK) {
+            $faviconPath = $this->uploadBrandFile($_FILES['app_favicon'], 'favicon');
+            if ($faviconPath) {
+                Config::set('app_favicon', $faviconPath);
+            }
+        }
+
+        // === Callback de status da API por empresa (tabela api_keys) ===
+        // Os campos vêm como callback_url[companyId] e callback_enabled[companyId].
+        // Só é possível configurar callback de empresas que já têm chave de API.
+        // Como o formulário só renderiza esses campos para empresas com chave,
+        // iteramos pelas URLs recebidas.
+        $this->saveApiCallbacksFromForm();
+
+        Config::reload();
+        flash('success', 'Configurações salvas com sucesso!');
+        $this->redirect('settings');
+    }
+
+    /**
+     * Persiste os callbacks de status por empresa enviados pelo formulário
+     * principal de Configurações. Best-effort e defensivo: uma falha aqui (ex.:
+     * migration 135 não aplicada) não impede o restante do "Salvar".
+     *
+     * Campos esperados no POST:
+     *  - callback_url[companyId]      (string; vazio = remove/limpa a URL)
+     *  - callback_enabled[companyId]  (presente = ativo; ausente = inativo)
+     */
+    private function saveApiCallbacksFromForm(): void
+    {
+        $urls = $_POST['callback_url'] ?? null;
+        if (!is_array($urls)) {
+            return; // seção de integrações não enviada
+        }
+        $enabledMap = $_POST['callback_enabled'] ?? [];
+        if (!is_array($enabledMap)) {
+            $enabledMap = [];
+        }
+
+        $apiKeyModel = new ApiKey();
+        foreach ($urls as $companyId => $rawUrl) {
+            $companyId = (int)$companyId;
+            if ($companyId <= 0) {
+                continue;
+            }
+            $url = trim((string)$rawUrl);
+            // Checkbox marcado chega como '1' (ou qualquer valor) na chave da empresa.
+            $enabled = !empty($enabledMap[$companyId]);
+
+            // Se o usuário marcou "Ativo" mas a URL é inválida, não ativa (evita
+            // enfileirar callbacks para uma URL que o cron nunca conseguiria
+            // entregar). A URL em si ainda é gravada para o admin corrigir.
+            if ($enabled && !ApiCallbackService::isValidCallbackUrl($url)) {
+                $enabled = false;
+            }
+
+            try {
+                $apiKeyModel->updateCallback($companyId, $url, $enabled);
+            } catch (\Throwable $e) {
+                Logger::warning('Falha ao salvar callback da API no save geral', [
+                    'company_id' => $companyId,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Gera a chave de API de uma empresa (uma por empresa). Se a empresa já tiver
+     * chave, mantém a existente. A chave fica visível na lista de empresas.
+     */
+    public function generateApiKey()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('settings');
+        }
+
+        $companyId = (int)($_POST['company_id'] ?? 0);
+        if ($companyId <= 0) {
+            flash('error', 'Informe a empresa.');
+            $this->redirect('settings');
+        }
+
+        // Empresa precisa existir.
+        $company = (new Company())->findById($companyId);
+        if (!$company) {
+            flash('error', 'Empresa inválida.');
+            $this->redirect('settings');
+        }
+
+        try {
+            (new ApiKey())->getOrCreateForCompany($companyId);
+            flash('success', 'Chave gerada.');
+        } catch (\Throwable $e) {
+            Logger::error('Falha ao gerar API Key', ['error' => $e->getMessage()]);
+            flash('error', 'Não foi possível gerar a chave. Verifique se a migration foi aplicada.');
+        }
+
+        $this->redirect('settings');
+    }
+
+    /**
+     * Upload da logo da assinatura. Mais tolerante que uploadBrandFile: valida por
+     * EXTENSÃO (não confia só no MIME do navegador, que às vezes vem genérico) e
+     * aceita até 3MB. Retorna o caminho relativo salvo ou null.
+     */
+    private function uploadSignatureLogo($file)
+    {
+        // Até 3MB e validação por CONTEÚDO real (sem SVG, sem confiar na extensão).
+        if (($file['size'] ?? 0) > 3 * 1024 * 1024) return null;
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) return null;
+
+        $canonicalExt = null;
+        $info = @getimagesize($file['tmp_name']);
+        if ($info !== false) {
+            $canonicalExt = ImageUploadRules::extensionForImageType($info[2] ?? null);
+            if ($canonicalExt === null && !empty($info['mime'])) {
+                $canonicalExt = ImageUploadRules::extensionForMime($info['mime']);
+            }
+        }
+        if ($canonicalExt === null) return null;
+
+        $uploadDir = PUBLIC_PATH . '/uploads/brand';
+        if (!is_dir($uploadDir)) { @mkdir($uploadDir, 0755, true); }
+
+        $fileName = ImageUploadRules::safeFileName('sig', $canonicalExt);
+        $filePath = 'uploads/brand/' . $fileName;
+        if (move_uploaded_file($file['tmp_name'], PUBLIC_PATH . '/' . $filePath)) {
+            return $filePath;
+        }
+        return null;
+    }
+
+    private function uploadBrandFile($file, $prefix)
+    {
+        // Tamanho dentro do limite (2MB).
+        if (!ImageUploadRules::isSizeAllowed($file['size'] ?? 0)) {
+            return null;
+        }
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            return null;
+        }
+
+        // NÃO confia no MIME/extensão enviados pelo navegador. Decide pelo
+        // conteúdo REAL do arquivo. SVG é recusado (vetor de XSS).
+        $canonicalExt = null;
+        $info = @getimagesize($file['tmp_name']);
+        if ($info !== false) {
+            $canonicalExt = ImageUploadRules::extensionForImageType($info[2] ?? null);
+            // .ico pode não ter IMAGETYPE universal — tenta pelo MIME real.
+            if ($canonicalExt === null && !empty($info['mime'])) {
+                $canonicalExt = ImageUploadRules::extensionForMime($info['mime']);
+            }
+        }
+        // Fallback para .ico via finfo (getimagesize às vezes não reconhece).
+        if ($canonicalExt === null && function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            $realMime = finfo_file($fi, $file['tmp_name']);
+            finfo_close($fi);
+            $canonicalExt = ImageUploadRules::extensionForMime($realMime);
+        }
+        if ($canonicalExt === null) {
+            return null; // conteúdo não é uma imagem aceita
+        }
+
+        $fileName = ImageUploadRules::safeFileName($prefix, $canonicalExt);
+        $uploadDir = PUBLIC_PATH . '/uploads/brand';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        $filePath = 'uploads/brand/' . $fileName;
+        if (move_uploaded_file($file['tmp_name'], PUBLIC_PATH . '/' . $filePath)) {
+            return $filePath;
+        }
+        return null;
+    }
+
+    // Configuração do banco via tela (primeira execução)
+    public function database()
+    {
+        $user = $this->currentUser();
+        if ($user && $user['role'] !== 'super_admin') {
+            $this->redirect('dashboard');
+        }
+        $configFile = BASE_PATH . '/config/database.php';
+        $config = file_exists($configFile) ? require $configFile : [];
+        $this->view('admin/database_config', ['config' => $config, 'user' => $user]);
+    }
+
+    public function saveDatabase()
+    {
+        // Segurança: gravar config/database.php é uma ação de altíssimo impacto.
+        // Antes esta ação estava SEM QUALQUER checagem — qualquer POST reescrevia
+        // a conexão do banco. Regra: se o sistema JÁ está instalado (config existe),
+        // só super_admin pode alterar. Na primeira execução (sem config), o
+        // assistente de instalação pode gravar sem sessão.
+        $configFile = BASE_PATH . '/config/database.php';
+        $alreadyInstalled = file_exists($configFile);
+        if ($alreadyInstalled) {
+            $this->requireRole(['super_admin']);
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('settings/database');
+        }
+
+        $config = [
+            'host' => trim($_POST['host'] ?? 'localhost'),
+            'port' => trim($_POST['port'] ?? '3306'),
+            'database' => trim($_POST['database'] ?? ''),
+            'username' => trim($_POST['username'] ?? ''),
+            'password' => $_POST['password'] ?? '',
+        ];
+
+        $content = "<?php\n\nreturn " . var_export($config, true) . ";\n";
+        file_put_contents($configFile, $content);
+
+        flash('success', 'Configuração do banco de dados salva!');
+        $this->redirect('settings');
+    }
+
+    // Testar webhook WhatsApp
+    public function testWebhook()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['success' => false, 'message' => 'Método inválido'], 405);
+        }
+
+        $webhookUrl = Config::get('webhook_url');
+        $phonesRaw = Config::get('webhook_phones') ?: Config::get('webhook_phone') ?: '';
+        $namesRaw = Config::get('webhook_names') ?: Config::get('webhook_name') ?: 'Admin';
+
+        if (empty($webhookUrl)) {
+            $this->json(['success' => false, 'message' => 'URL do webhook não configurada. Salve as configurações antes de testar.']);
+        }
+
+        if (empty($phonesRaw)) {
+            $this->json(['success' => false, 'message' => 'Nenhum telefone configurado. Preencha os telefones e salve antes de testar.']);
+        }
+
+        $phones = array_map('trim', explode(',', $phonesRaw));
+        $names = array_map('trim', explode(',', $namesRaw));
+
+        // Pegar o primeiro telefone/nome para o teste
+        $phone = preg_replace('/[^0-9]/', '', $phones[0] ?? '');
+        $name = $names[0] ?? 'Admin';
+
+        if (empty($phone)) {
+            $this->json(['success' => false, 'message' => 'Telefone inválido.']);
+        }
+
+        $message = "🔔 *Teste de Webhook*\n\nOlá, {$name}! Este é um teste do webhook do helpdesk.\n\nSe você recebeu esta mensagem, a configuração está funcionando!\n\nData: " . date('d/m/Y H:i:s');
+
+        $payload = json_encode([
+            'phone' => $phone,
+            'name' => $name,
+            'message' => $message,
+        ]);
+
+        $ch = curl_init($webhookUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if (!empty($error)) {
+            $this->json(['success' => false, 'message' => "Erro de conexão: {$error}"]);
+        }
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            $this->json(['success' => true, 'message' => "Webhook enviado com sucesso para {$phone} (HTTP {$httpCode})!"]);
+        } else {
+            $this->json(['success' => false, 'message' => "Falha no webhook. HTTP {$httpCode}. Resposta: " . substr($response, 0, 200)]);
+        }
+    }
+
+    // Testar conexão Nvoip (fluxo client_credentials)
+    public function testNvoip()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['success' => false, 'message' => 'Método inválido'], 405);
+        }
+
+        $api = new NvoipApi();
+        if (!$api->isConfigured()) {
+            $this->json(['success' => false, 'message' => 'Preencha as credenciais da Nvoip e salve antes de testar.']);
+        }
+
+        // Autenticação servidor a servidor (client_credentials).
+        // Emitir o token é o critério de sucesso: confirma credenciais, URLs e escopos válidos.
+        // Não testamos /users aqui porque a credencial de telefonia (call:make/call:query)
+        // normalmente não tem escopo para listar usuários (retornaria 403 esperado).
+        $auth = $api->authenticate();
+        if (empty($auth['success'])) {
+            // Mensagem genérica — não expõe token/segredo/headers.
+            $this->json(['success' => false, 'message' => $auth['error'] ?? 'Falha na autenticação com a Nvoip.']);
+        }
+
+        $this->json(['success' => true, 'message' => 'Conexão com a Nvoip estabelecida com sucesso (autenticação OK).']);
+    }
+
+    // Testar envio de email SMTP
+    public function testEmail()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['success' => false, 'message' => 'Método inválido'], 405);
+        }
+
+        $fromEmail = Config::get('smtp_from_email');
+        $smtpHost = Config::get('smtp_host');
+        $adminEmail = $_SESSION['user_email'] ?? '';
+
+        if (empty($smtpHost) || empty($fromEmail)) {
+            $this->json(['success' => false, 'message' => 'SMTP não configurado. Preencha os campos e salve antes de testar.']);
+        }
+
+        $toEmail = $adminEmail ?: $fromEmail;
+        $subject = 'Teste de Email - ON Solutions Helpdesk';
+        $body = Mailer::template(
+            'Teste de Email',
+            '<p>Este é um email de teste enviado pelo sistema ON Solutions Helpdesk.</p>
+             <p>Se você está recebendo este email, a configuração SMTP está funcionando corretamente!</p>
+             <p style="font-size:0.8rem;color:#999;">Enviado em: ' . date('d/m/Y H:i:s') . '</p>'
+        );
+
+        $sent = Mailer::send($toEmail, $subject, $body);
+
+        if ($sent) {
+            $this->json(['success' => true, 'message' => "Email de teste enviado para {$toEmail}!"]);
+        } else {
+            $this->json(['success' => false, 'message' => 'Falha no envio. Verifique as credenciais SMTP.']);
+        }
+    }
+
+    // ===== Contas de E-mail para Prospecção =====
+
+    public function emailAccounts()
+    {
+        $this->requireRole(['super_admin']);
+        $user = $this->currentUser();
+        $model = new EmailAccount();
+        $accounts = $model->getAll();
+
+        // Usuários internos para vinculação
+        $userModel = new User();
+        $allUsers = $userModel->getByRoles(['super_admin', 'attendant', 'developer', 'analyst', 'comercial', 'marketing', 'whatsapp_agent']);
+
+        // Defaults do servidor
+        $defaults = [
+            'prospection_smtp_host' => Config::get('prospection_smtp_host', ''),
+            'prospection_smtp_port' => Config::get('prospection_smtp_port', '587'),
+            'prospection_smtp_encryption' => Config::get('prospection_smtp_encryption', 'tls'),
+            'prospection_imap_host' => Config::get('prospection_imap_host', ''),
+            'prospection_imap_port' => Config::get('prospection_imap_port', '993'),
+            'prospection_imap_encryption' => Config::get('prospection_imap_encryption', 'ssl'),
+        ];
+
+        $this->view('admin/email_accounts', [
+            'user' => $user,
+            'accounts' => $accounts,
+            'allUsers' => $allUsers,
+            'defaults' => $defaults,
+        ]);
+    }
+
+    public function saveEmailDefaults()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->redirect('settings/emailAccounts');
+
+        Config::set('prospection_smtp_host', trim($_POST['prospection_smtp_host'] ?? ''));
+        Config::set('prospection_smtp_port', trim($_POST['prospection_smtp_port'] ?? '587'));
+        Config::set('prospection_smtp_encryption', trim($_POST['prospection_smtp_encryption'] ?? 'tls'));
+        Config::set('prospection_imap_host', trim($_POST['prospection_imap_host'] ?? ''));
+        Config::set('prospection_imap_port', trim($_POST['prospection_imap_port'] ?? '993'));
+        Config::set('prospection_imap_encryption', trim($_POST['prospection_imap_encryption'] ?? 'ssl'));
+
+        flash('success', 'Servidor padrão salvo!');
+        $this->redirect('settings/emailAccounts');
+    }
+
+    public function saveEmailAccount()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->redirect('settings/emailAccounts');
+
+        $user = $this->currentUser();
+        $model = new EmailAccount();
+        $id = !empty($_POST['id']) ? intval($_POST['id']) : null;
+
+        $data = [
+            'email' => trim($_POST['email'] ?? ''),
+            'display_name' => trim($_POST['display_name'] ?? '') ?: null,
+            'smtp_host' => trim($_POST['smtp_host'] ?? ''),
+            'smtp_port' => intval($_POST['smtp_port'] ?? 587),
+            'smtp_encryption' => in_array($_POST['smtp_encryption'] ?? '', ['tls', 'ssl', 'none']) ? $_POST['smtp_encryption'] : 'tls',
+            'smtp_username' => trim($_POST['smtp_username'] ?? ''),
+            'imap_host' => trim($_POST['imap_host'] ?? '') ?: null,
+            'imap_port' => intval($_POST['imap_port'] ?? 993),
+            'imap_encryption' => in_array($_POST['imap_encryption'] ?? '', ['ssl', 'tls', 'none']) ? $_POST['imap_encryption'] : 'ssl',
+        ];
+
+        if ($id) {
+            // Atualiza — só manda senha se foi preenchida
+            if (!empty($_POST['smtp_password'])) {
+                $data['smtp_password'] = $_POST['smtp_password'];
+            }
+            $model->update($id, $data);
+        } else {
+            $data['smtp_password'] = $_POST['smtp_password'] ?? '';
+            $data['created_by'] = $user['id'];
+            $id = $model->create($data);
+        }
+
+        // Vincula usuários
+        $userIds = array_filter(array_map('intval', $_POST['users'] ?? []));
+        $model->setLinkedUsers($id, $userIds);
+
+        flash('success', 'Conta de e-mail salva com sucesso!');
+        $this->redirect('settings/emailAccounts');
+    }
+
+    /**
+     * Salva (cria/atualiza) uma assinatura de e-mail por domínio.
+     * POST settings/saveEmailSignature  (multipart: logo opcional)
+     */
+    public function saveEmailSignature()
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->redirect('settings');
+
+        $db = Database::getInstance();
+        $id = !empty($_POST['sig_id']) ? intval($_POST['sig_id']) : null;
+        $domain = strtolower(trim($_POST['domain'] ?? ''));
+        // normaliza: se colaram um e-mail, extrai o domínio
+        if (strpos($domain, '@') !== false) $domain = substr(strrchr($domain, '@'), 1);
+        $domain = preg_replace('/^https?:\/\//', '', $domain);
+        $domain = trim($domain, '/ ');
+
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']);
+        if ($domain === '') {
+            if ($isAjax) $this->json(['error' => 'Informe o domínio da assinatura.'], 400);
+            flash('error', 'Informe o domínio da assinatura.'); $this->redirect('settings');
+        }
+
+        $data = [
+            'domain' => $domain,
+            'company' => trim($_POST['company'] ?? '') ?: null,
+            'specialties' => trim($_POST['specialties'] ?? '') ?: null,
+            'contact_email' => trim($_POST['contact_email'] ?? '') ?: null,
+            'site' => trim($_POST['site'] ?? '') ?: null,
+            'tagline' => trim($_POST['tagline'] ?? '') ?: null,
+            'color' => trim($_POST['color'] ?? '') ?: '#00997D',
+            'is_active' => !empty($_POST['is_active']) ? 1 : 0,
+        ];
+
+        // Upload da logo (opcional). Vazio = mantém a atual / usa a logo do sistema.
+        $logoError = null;
+        if (!empty($_FILES['logo']['name'])) {
+            if ($_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+                $logoPath = $this->uploadSignatureLogo($_FILES['logo']);
+                if ($logoPath) $data['logo'] = $logoPath;
+                else $logoError = 'Logo não salva (formato não suportado ou maior que 3MB). Use PNG, JPG, SVG ou WEBP.';
+            } else {
+                $logoError = 'Falha no upload da logo (código ' . (int)$_FILES['logo']['error'] . ').';
+            }
+        }
+
+        try {
+            if ($id) {
+                $db->update('email_signatures', $data, 'id = ?', [$id]);
+            } else {
+                // upsert por domínio
+                $exists = $db->fetch("SELECT id FROM email_signatures WHERE domain = ?", [$domain]);
+                if ($exists) $db->update('email_signatures', $data, 'id = ?', [$exists['id']]);
+                else $db->insert('email_signatures', $data);
+            }
+            if ($isAjax) $this->json(['success' => true, 'logo_error' => $logoError, 'error' => $logoError]);
+            flash($logoError ? 'error' : 'success', $logoError ?: 'Assinatura do domínio salva!');
+        } catch (\Throwable $e) {
+            if ($isAjax) $this->json(['error' => 'Erro ao salvar assinatura: ' . $e->getMessage()], 500);
+            flash('error', 'Erro ao salvar assinatura: ' . $e->getMessage());
+        }
+        $this->redirect('settings');
+    }
+
+    /** Exclui uma assinatura de domínio. POST settings/deleteEmailSignature/{id} */
+    public function deleteEmailSignature($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$id) {
+            if ($isAjax) $this->json(['error' => 'Requisição inválida'], 400);
+            $this->redirect('settings');
+        }
+        try {
+            Database::getInstance()->delete('email_signatures', 'id = ?', [$id]);
+            if ($isAjax) $this->json(['success' => true]);
+            flash('success', 'Assinatura removida.');
+        } catch (\Throwable $e) {
+            if ($isAjax) $this->json(['error' => 'Erro ao remover.'], 500);
+            flash('error', 'Erro ao remover.');
+        }
+        $this->redirect('settings');
+    }
+
+    public function deleteEmailAccount($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$id) $this->redirect('settings/emailAccounts');
+
+        $model = new EmailAccount();
+        $model->delete($id);
+
+        flash('success', 'Conta de e-mail excluída.');
+        $this->redirect('settings/emailAccounts');
+    }
+
+    public function getEmailAccount($id = null)
+    {
+        $this->requireRole(['super_admin']);
+        if (!$id) $this->json(['error' => 'ID não informado'], 400);
+
+        $model = new EmailAccount();
+        $account = $model->findById($id);
+        if (!$account) $this->json(['error' => 'Conta não encontrada'], 404);
+
+        $account['linked_users'] = $model->getLinkedUserIds($id);
+        // Não envia a senha pro frontend
+        unset($account['smtp_password']);
+
+        $this->json(['account' => $account]);
+    }
+}

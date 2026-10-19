@@ -1,0 +1,501 @@
+﻿<!-- Mobile Top Bar -->
+<div class="mobile-topbar">
+    <button class="btn btn-sm btn-outline-secondary" id="btn-toggle-sidebar" aria-label="Menu">
+        <i class="bi bi-list fs-5"></i>
+    </button>
+    <?php $logoUrlMobile = Config::get('app_logo'); ?>
+    <?php if ($logoUrlMobile): ?>
+    <img src="<?= baseUrl($logoUrlMobile) ?>" alt="Logo" style="max-height:28px;">
+    <?php else: ?>
+    <span class="logo-text">ON</span><span class="fw-light"> Solutions</span>
+    <?php endif; ?>
+</div>
+
+<!-- Overlay -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header position-relative">
+        <?php $logoUrl = Config::get('app_logo'); ?>
+        <?php if ($logoUrl): ?>
+        <img src="<?= baseUrl($logoUrl) ?>" alt="Logo" style="max-height:38px;max-width:180px;">
+        <?php else: ?>
+        <span class="logo-text">ON</span>
+        <span class="text-white fw-light"> Solutions</span>
+        <?php endif; ?>
+        <div style="color:#00BFA6;font-size:0.78rem;font-weight:500;margin-top:3px;">Helpdesk</div>
+        <button type="button" class="sidebar-collapse-btn position-absolute" id="btn-collapse-sidebar" title="Recolher menu" style="top:12px;right:10px;">
+            <i class="bi bi-chevron-double-left" id="collapse-icon"></i>
+        </button>
+    </div>
+    <nav class="sidebar-nav">
+        <?php $role = $user['role'] ?? null; ?>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'dashboard' ? 'active' : '' ?>" href="<?= baseUrl('dashboard') ?>">
+                    <i class="bi bi-grid-1x2"></i> Dashboard
+                </a>
+            </li>
+
+            <?php // ===== WhatsApp (Chat) — equipe interna (todos menos cliente) ===== ?>
+            <?php if ($role !== 'client' && Permissions::canAccess($role, 'whatsapp')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= in_array(($currentPage ?? ''), ['whatsapp', 'whatsapp_chat'], true) ? 'active' : '' ?>" href="<?= baseUrl('whatsapp/chat') ?>">
+                    <i class="bi bi-whatsapp"></i> WhatsApp
+                </a>
+            </li>
+            <?php endif; ?>
+
+            <?php // ===== Área do cliente ===== ?>
+            <?php if ($role === 'client'): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'tickets' ? 'active' : '' ?>" href="<?= baseUrl('tickets') ?>">
+                    <i class="bi bi-ticket-detailed"></i> Minhas Demandas
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'schedule' ? 'active' : '' ?>" href="<?= baseUrl('planning/clientSchedule') ?>">
+                    <i class="bi bi-calendar-range"></i> Cronograma
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'create' ? 'active' : '' ?>" href="<?= baseUrl('tickets/create') ?>">
+                    <i class="bi bi-plus-circle"></i> Nova Demanda
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'documents' ? 'active' : '' ?>" href="<?= baseUrl('documents') ?>">
+                    <i class="bi bi-folder"></i> Documentos
+                </a>
+            </li>
+            <?php
+            $sidebarFullUser = (new User())->findById($user['id'] ?? 0);
+            if ($sidebarFullUser && $sidebarFullUser['is_company_owner']): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'subusers' ? 'active' : '' ?>" href="<?= baseUrl('subusers') ?>">
+                    <i class="bi bi-people"></i> Minha Equipe
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php endif; // fim cliente ?>
+
+            <?php // ===== Relatório Diário (RDO) — equipe interna ===== ?>
+            <?php if (Permissions::canAccess($role, 'rdo')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'rdo' ? 'active' : '' ?>" href="<?= baseUrl('rdo') ?>">
+                    <i class="bi bi-journal-text"></i> Relatório Diário
+                </a>
+            </li>
+            <?php endif; ?>
+
+            <?php // ===== Operacional / Suporte ===== ?>
+            <?php if (Permissions::canAccess($role, 'tickets')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'tickets' ? 'active' : '' ?>" href="<?= baseUrl('tickets') ?>">
+                    <i class="bi bi-list-task"></i> Demandas
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'tickets_create')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'create' ? 'active' : '' ?>" href="<?= baseUrl('tickets/create') ?>">
+                    <i class="bi bi-plus-circle"></i> Nova Demanda
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if ($role !== 'client' && Permissions::canAccess($role, 'documents')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'documents' ? 'active' : '' ?>" href="<?= baseUrl('documents') ?>">
+                    <i class="bi bi-folder"></i> Documentos
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'planning')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'planning' ? 'active' : '' ?>" href="<?= baseUrl('planning') ?>">
+                    <i class="bi bi-calendar2-check"></i> Planejamento
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'agenda')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'agenda' ? 'active' : '' ?>" href="<?= baseUrl('agenda') ?>">
+                    <i class="bi bi-calendar2-week"></i> Agenda
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'videocall')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'videocall' ? 'active' : '' ?>" href="<?= baseUrl('videocall/myRecordings') ?>">
+                    <i class="bi bi-collection-play"></i> Gravações
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php
+            // ===== Esteira comercial (menu agrupado/colapsável) =====
+            // Cada link usa a rota real do controller (singular onde o controller
+            // é singular: proposal/contract/provider/project).
+            $esteiraItems = [
+                ['mod' => 'presentations',   'page' => 'presentations',   'route' => 'presentation',    'icon' => 'bi-easel',              'label' => 'Apresentação'],
+                ['mod' => 'proposals',       'page' => 'proposals',       'route' => 'proposal',        'icon' => 'bi-file-earmark-text',  'label' => 'Propostas'],
+                ['mod' => 'contracts',       'page' => 'contracts',       'route' => 'contract',        'icon' => 'bi-file-earmark-check', 'label' => 'Contratos'],
+                ['mod' => 'finance',         'page' => 'finance',         'route' => 'finance',         'icon' => 'bi-cash-coin',          'label' => 'Financeiro'],
+                ['mod' => 'onboarding',      'page' => 'onboarding',      'route' => 'onboarding',      'icon' => 'bi-rocket-takeoff',     'label' => 'Onboarding'],
+                ['mod' => 'credentials',     'page' => 'credentials',     'route' => 'credential',      'icon' => 'bi-shield-lock',        'label' => 'Credenciais'],
+                ['mod' => 'provisioning',    'page' => 'provisioning',    'route' => 'provisioning',    'icon' => 'bi-hdd-network',        'label' => 'Provisionamento'],
+                ['mod' => 'providers',       'page' => 'providers',       'route' => 'provider',        'icon' => 'bi-person-badge',       'label' => 'Prestadores'],
+                ['mod' => 'projects',        'page' => 'projects',        'route' => 'project',         'icon' => 'bi-kanban',             'label' => 'Projetos'],
+                ['mod' => 'service_catalog', 'page' => 'service_catalog', 'route' => 'servicecatalog',  'icon' => 'bi-card-checklist',     'label' => 'Catálogo de serviços'],
+            ];
+            $esteiraAllowed = array_values(array_filter($esteiraItems, fn($it) => Permissions::canAccess($role, $it['mod'])));
+            $esteiraPages = array_column($esteiraAllowed, 'page');
+            $esteiraActive = in_array($currentPage ?? '', $esteiraPages, true);
+            ?>
+            <?php if (!empty($esteiraAllowed)): ?>
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center justify-content-between <?= $esteiraActive ? 'active' : '' ?>" href="<?= baseUrl($esteiraAllowed[0]['route']) ?>">
+                    <span class="nav-link-body"><i class="bi bi-diagram-3"></i> <span class="nav-text">Esteira comercial</span></span>
+                    <i class="bi bi-chevron-down esteira-caret <?= $esteiraActive ? '' : 'collapsed-caret' ?>" onclick="event.preventDefault();event.stopPropagation();toggleSubnav(this, 'esteira-subnav');" style="font-size:0.7rem;padding:4px;cursor:pointer;transition:transform 0.2s;"></i>
+                </a>
+            </li>
+            <ul class="nav flex-column" id="esteira-subnav" style="<?= $esteiraActive ? '' : 'display:none;' ?>list-style:none;padding-left:0;">
+                <?php foreach ($esteiraAllowed as $it): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === $it['page'] ? 'active' : '' ?>" href="<?= baseUrl($it['route']) ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi <?= $it['icon'] ?>"></i> <?= $it['label'] ?>
+                    </a>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <?php endif; ?>
+            <?php $canPerfCom = Permissions::canAccess($role, 'performance_comercial'); ?>
+            <?php $canPerfOp = Permissions::canAccess($role, 'performance_operacional'); ?>
+            <?php if ($canPerfCom || $canPerfOp): ?>
+            <?php $perfSectionActive = in_array($currentPage ?? '', ['agenda_dashboard', 'performance_operacional']); ?>
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center justify-content-between <?= $perfSectionActive ? 'active' : '' ?>" href="<?= baseUrl($canPerfCom ? 'agenda/dashboard' : 'tickets/performance') ?>">
+                    <span class="nav-link-body"><i class="bi bi-bar-chart-line"></i> <span class="nav-text">Performance</span></span>
+                    <i class="bi bi-chevron-down performance-caret <?= $perfSectionActive ? '' : 'collapsed-caret' ?>" onclick="event.preventDefault();event.stopPropagation();toggleSubnav(this, 'performance-subnav');" style="font-size:0.7rem;padding:4px;cursor:pointer;transition:transform 0.2s;"></i>
+                </a>
+            </li>
+            <ul class="nav flex-column" id="performance-subnav" style="<?= $perfSectionActive ? '' : 'display:none;' ?>list-style:none;padding-left:0;">
+                <?php if ($canPerfCom): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'agenda_dashboard' ? 'active' : '' ?>" href="<?= baseUrl('agenda/dashboard') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-briefcase"></i> Comercial
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canPerfOp): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'performance_operacional' ? 'active' : '' ?>" href="<?= baseUrl('tickets/performance') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-gear"></i> Operacional
+                    </a>
+                </li>
+                <?php endif; ?>
+            </ul>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'prospection')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'prospection' ? 'active' : '' ?>" href="<?= baseUrl('prospection') ?>">
+                    <i class="bi bi-envelope-paper"></i> Prospecção E-mail
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'prospection_inbox' ? 'active' : '' ?>" href="<?= baseUrl('prospection/inbox') ?>">
+                    <i class="bi bi-inbox"></i> Caixa de Entrada
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'marketing')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'marketing' ? 'active' : '' ?>" href="<?= baseUrl('marketing') ?>">
+                    <i class="bi bi-megaphone"></i> Marketing
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'social')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'buffer_dashboard' ? 'active' : '' ?>" href="<?= baseUrl('buffer/dashboard') ?>">
+                    <i class="bi bi-graph-up-arrow"></i> Métricas Sociais
+                </a>
+            </li>
+            <?php endif; ?>
+
+            <?php // ===== CRM ===== ?>
+            <?php $canCrm = Permissions::canAccess($role, 'crm'); ?>
+            <?php if ($canCrm && $role !== 'client'): ?>
+            <li class="nav-item mt-3">
+                <small class="text-uppercase px-3" style="font-size:0.65rem;color:rgba(255,255,255,0.35);letter-spacing:0.5px;">CRM</small>
+            </li>
+            <?php endif; ?>
+
+            <?php if ($canCrm): ?>
+            <?php $canApollo = Permissions::canAccess($role, 'crm_apollo'); ?>
+            <?php $canProspecting = Permissions::canAccess($role, 'crm_prospecting'); ?>
+            <?php $canSequences = Permissions::canAccess($role, 'sequences'); ?>
+            <?php $canLinkedin = Permissions::canAccess($role, 'linkedin'); ?>
+            <?php $canLeadcapture = Permissions::canAccess($role, 'leadcapture'); ?>
+            <?php $canLeadcaptureAdmin = Permissions::canAccess($role, 'leadcapture_admin'); ?>
+            <?php $crmSectionActive = in_array($currentPage ?? '', ['crm', 'crm_dashboard', 'crm_commissions', 'crm_leads', 'crm_calls', 'crm_capture', 'crm_prospecting', 'crm_no_interest', 'sequences', 'linkedin_queue', 'linkedin_run', 'leadcapture_opps', 'leadcapture_config', 'leadcapture_health']); ?>
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center justify-content-between <?= ($currentPage ?? '') === 'crm' ? 'active' : '' ?>" href="<?= baseUrl('crm') ?>">
+                    <span class="nav-link-body"><i class="bi bi-kanban"></i> <span class="nav-text">CRM</span></span>
+                    <i class="bi bi-chevron-down crm-caret <?= $crmSectionActive ? '' : 'collapsed-caret' ?>" onclick="event.preventDefault();event.stopPropagation();toggleCrmSub(this);" style="font-size:0.7rem;padding:4px;cursor:pointer;transition:transform 0.2s;"></i>
+                </a>
+            </li>
+            <ul class="nav flex-column crm-subnav" id="crm-subnav" style="<?= $crmSectionActive ? '' : 'display:none;' ?>list-style:none;padding-left:0;">
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_dashboard' ? 'active' : '' ?>" href="<?= baseUrl('crm/dashboard') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-graph-up"></i> Dashboard CRM
+                    </a>
+                </li>
+                <?php if ($canApollo): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_capture' ? 'active' : '' ?>" href="<?= baseUrl('crm/capture') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-search"></i> Apollo (Prospects)
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canProspecting): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_prospecting' ? 'active' : '' ?>" href="<?= baseUrl('crm/prospecting') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-robot"></i> Prospecção Automática
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_no_interest' ? 'active' : '' ?>" href="<?= baseUrl('crm/noInterest') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-person-dash"></i> Leads sem interesse
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canSequences): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'sequences' ? 'active' : '' ?>" href="<?= baseUrl('sequences') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-diagram-3"></i> Sequências
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canLinkedin): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= in_array($currentPage ?? '', ['linkedin_queue', 'linkedin_run']) ? 'active' : '' ?>" href="<?= baseUrl('linkedin/queue') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-linkedin"></i> Minhas Ações
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canLeadcapture): ?>
+                <?php $lcActive = in_array($currentPage ?? '', ['leadcapture_opps', 'leadcapture_config', 'leadcapture_health']); ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= $lcActive ? 'active' : '' ?>" href="<?= baseUrl('leadcapture/opportunities') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-binoculars"></i> Captação de Leads
+                    </a>
+                </li>
+                <?php if ($lcActive && $canLeadcaptureAdmin): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'leadcapture_opps' ? 'active' : '' ?>" href="<?= baseUrl('leadcapture/opportunities') ?>" style="padding-left:3.4rem;font-size:0.82rem;">
+                        <i class="bi bi-dot"></i> Oportunidades
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'leadcapture_config' ? 'active' : '' ?>" href="<?= baseUrl('leadcapture/configuracoes') ?>" style="padding-left:3.4rem;font-size:0.82rem;">
+                        <i class="bi bi-dot"></i> Configurações de Busca
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'leadcapture_health' ? 'active' : '' ?>" href="<?= baseUrl('leadcapture/saude') ?>" style="padding-left:3.4rem;font-size:0.82rem;">
+                        <i class="bi bi-dot"></i> Saúde da Integração
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php endif; ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_leads' ? 'active' : '' ?>" href="<?= baseUrl('crm/leads') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-person-lines-fill"></i> Meus leads
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_calls' ? 'active' : '' ?>" href="<?= baseUrl('crm/calls') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-telephone"></i> Ligações
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'crm_commissions' ? 'active' : '' ?>" href="<?= baseUrl('crm/commissions') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-cash-stack"></i> Comissões
+                    </a>
+                </li>
+            </ul>
+            <?php endif; // fim CRM ?>
+
+            <?php // ===== Administração ===== ?>
+            <?php if (Permissions::canAccess($role, 'companies')): ?>
+            <li class="nav-item mt-3">
+                <small class="text-uppercase px-3" style="font-size:0.65rem;color:rgba(255,255,255,0.35);letter-spacing:0.5px;">Administração</small>
+            </li>
+            <?php $companiesSectionActive = in_array($currentPage ?? '', ['companies', 'users']); ?>
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center justify-content-between <?= ($currentPage ?? '') === 'companies' ? 'active' : '' ?>" href="<?= baseUrl('companies') ?>">
+                    <span class="nav-link-body"><i class="bi bi-building"></i> <span class="nav-text">Empresas</span></span>
+                    <i class="bi bi-chevron-down companies-caret <?= $companiesSectionActive ? '' : 'collapsed-caret' ?>" onclick="event.preventDefault();event.stopPropagation();toggleSubnav(this, 'companies-subnav');" style="font-size:0.7rem;padding:4px;cursor:pointer;transition:transform 0.2s;"></i>
+                </a>
+            </li>
+            <ul class="nav flex-column" id="companies-subnav" style="<?= $companiesSectionActive ? '' : 'display:none;' ?>list-style:none;padding-left:0;">
+                <?php if (Permissions::canAccess($role, 'users')): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'users' ? 'active' : '' ?>" href="<?= baseUrl('users') ?>" style="padding-left:2.6rem;font-size:0.85rem;">
+                        <i class="bi bi-people"></i> Todos os Usuários
+                    </a>
+                </li>
+                <?php endif; ?>
+            </ul>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'acessos')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'acessos' ? 'active' : '' ?>" href="<?= baseUrl('acessos') ?>">
+                    <i class="bi bi-shield-lock"></i> Acessos
+                </a>
+            </li>
+            <?php endif; ?>
+            <?php if (Permissions::canAccess($role, 'settings')): ?>
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'settings' ? 'active' : '' ?>" href="<?= baseUrl('settings') ?>">
+                    <i class="bi bi-gear"></i> Configurações
+                </a>
+            </li>
+            <?php endif; ?>
+
+            <?php // ===== Desenvolvedor (API) ===== ?>
+            <?php if (Permissions::canAccess($role, 'settings')): ?>
+            <?php $developerSectionActive = in_array($currentPage ?? '', ['api_docs']); ?>
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center justify-content-between <?= $developerSectionActive ? 'active' : '' ?>" href="#" onclick="event.preventDefault();toggleSubnav(document.querySelector('.developer-caret'), 'developer-subnav');">
+                    <span class="nav-link-body"><i class="bi bi-code-slash"></i> <span class="nav-text">Desenvolvedor</span></span>
+                    <i class="bi bi-chevron-down developer-caret <?= $developerSectionActive ? '' : 'collapsed-caret' ?>" style="font-size:0.7rem;padding:4px;cursor:pointer;transition:transform 0.2s;"></i>
+                </a>
+            </li>
+            <ul class="nav flex-column" id="developer-subnav" style="<?= $developerSectionActive ? '' : 'display:none;' ?>list-style:none;padding-left:0;">
+                <li class="nav-item">
+                    <a class="nav-link <?= ($currentPage ?? '') === 'api_docs' ? 'active' : '' ?>" href="<?= baseUrl('api/documentos') ?>" target="_blank" rel="noopener" style="padding-left:2.6rem;font-size:0.85rem;">                        <i class="bi bi-file-earmark-code"></i> Documentação da API
+                    </a>
+                </li>
+            </ul>
+            <?php endif; ?>
+
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'notifications' ? 'active' : '' ?>" href="<?= baseUrl('notifications') ?>">
+                    <i class="bi bi-bell"></i> Notificações
+                    <span class="notification-count-sidebar badge bg-danger ms-1" style="display:none;font-size:0.65rem;"></span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link <?= ($currentPage ?? '') === 'account' ? 'active' : '' ?>" href="<?= baseUrl('account') ?>">
+                    <i class="bi bi-person-circle"></i> Minha Conta
+                </a>
+            </li>
+        </ul>
+    </nav>
+    <div class="sidebar-footer">
+        <?php if (!empty($_SESSION['impersonator'])): ?>
+        <?php
+            $activeCompanyName = '';
+            if (!empty($_SESSION['active_company_id'])) {
+                $activeCompanyRow = Database::getInstance()->fetch("SELECT name FROM companies WHERE id = ?", [$_SESSION['active_company_id']]);
+                $activeCompanyName = $activeCompanyRow['name'] ?? '';
+            }
+        ?>
+        <?php if ($activeCompanyName !== ''): ?>
+        <div class="text-white small mb-2 px-1" style="font-size:0.72rem;line-height:1.3;">
+            <i class="bi bi-building"></i> Vendo como
+            <strong><?= escape($_SESSION['user_name'] ?? '') ?></strong>
+            em <strong><?= escape($activeCompanyName) ?></strong>
+        </div>
+        <?php endif; ?>
+        <a href="<?= baseUrl('login/returnAdmin') ?>" class="btn btn-warning btn-sm w-100 mb-2 fw-medium" style="border-radius:8px;">
+            <i class="bi bi-arrow-return-left"></i> Voltar para <?= escape($_SESSION['impersonator']['user_name']) ?>
+        </a>
+        <?php endif; ?>
+        <div class="d-flex align-items-center text-white">
+            <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center flex-shrink-0" style="width:34px;height:34px;">
+                <i class="bi bi-person" style="font-size:0.9rem;"></i>
+            </div>
+            <div class="ms-2 flex-grow-1 overflow-hidden">
+                <div class="small fw-medium text-truncate"><?= escape($user['name'] ?? '') ?></div>
+                <div style="font-size:0.68rem;color:rgba(255,255,255,0.5);"><?= roleLabel($user['role'] ?? '') ?></div>
+            </div>
+            <a href="<?= baseUrl('login/logout') ?>" class="btn btn-sm btn-outline-danger ms-2 flex-shrink-0" title="Sair" style="padding:5px 10px;border-radius:8px;">
+                <i class="bi bi-box-arrow-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.collapsed-caret { transform: rotate(-90deg); }
+</style>
+<script>
+// Recolher/expandir subabas genéricas do sidebar
+function toggleSubnav(caret, subId) {
+    const sub = document.getElementById(subId);
+    if (!sub) return;
+    const isHidden = sub.style.display === 'none';
+    sub.style.display = isHidden ? '' : 'none';
+    caret.classList.toggle('collapsed-caret', !isHidden);
+}
+
+// Compatibilidade: toggle do CRM
+function toggleCrmSub(caret) {
+    toggleSubnav(caret, 'crm-subnav');
+}
+
+(function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const btn = document.getElementById('btn-toggle-sidebar');
+
+    function openSidebar() {
+        sidebar.classList.add('show');
+        overlay.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('show');
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    if (btn) btn.addEventListener('click', openSidebar);
+    if (overlay) overlay.addEventListener('click', closeSidebar);
+
+    // Recolher sidebar (desktop) — só ícones
+    const collapseBtn = document.getElementById('btn-collapse-sidebar');
+    const collapseIcon = document.getElementById('collapse-icon');
+
+    function applyCollapsedState(collapsed) {
+        document.body.classList.toggle('sidebar-collapsed', collapsed);
+        if (collapseIcon) {
+            collapseIcon.className = collapsed ? 'bi bi-chevron-double-right' : 'bi bi-chevron-double-left';
+        }
+    }
+
+    // Restaurar preferência salva
+    try {
+        if (localStorage.getItem('sidebarCollapsed') === '1') applyCollapsedState(true);
+    } catch (e) {}
+
+    if (collapseBtn) {
+        collapseBtn.addEventListener('click', function() {
+            const collapsed = !document.body.classList.contains('sidebar-collapsed');
+            applyCollapsedState(collapsed);
+            try { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+        });
+    }
+
+    // Fechar ao clicar num link (mobile)
+    sidebar.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth < 992) closeSidebar();
+        });
+    });
+})();
+</script>

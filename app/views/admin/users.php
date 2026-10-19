@@ -1,0 +1,207 @@
+﻿<?php $pageTitle = 'Usuários - ON Solutions Helpdesk'; $currentPage = 'users'; ?>
+<?php require APP_PATH . '/views/layouts/header.php'; ?>
+<?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
+
+<div class="main-content">
+    <div class="top-bar">
+        <div>
+            <h5 class="mb-0">Gerenciar Usuários</h5>
+            <small class="text-muted">Clientes e atendentes</small>
+        </div>
+        <a href="<?= baseUrl('users/create') ?>" class="btn btn-primary btn-sm">
+            <i class="bi bi-person-plus"></i> Novo
+        </a>
+    </div>
+
+    <?php if ($msg = flash('success')): ?>
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-check-circle-fill"></i>
+            <span><?= escape($msg) ?></span>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+    <?php if ($msg = flash('error')): ?>
+        <div class="alert alert-danger alert-dismissible fade show"><?= escape($msg) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    <?php endif; ?>
+
+    <?php
+    // Empresas distintas presentes na lista, para o filtro
+    $companyOptions = [];
+    foreach ($users as $u) {
+        if (!empty($u['company_id']) && !empty($u['company_name'])) {
+            $companyOptions[$u['company_id']] = $u['company_name'];
+        }
+    }
+    asort($companyOptions);
+    ?>
+    <div class="card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" id="filter-name" class="form-control" placeholder="Filtrar por nome ou email...">
+                    </div>
+                </div>
+                <div class="col-12 col-md-auto">
+                    <select id="filter-company" class="form-select form-select-sm">
+                        <option value="">Todas as empresas</option>
+                        <?php foreach ($companyOptions as $cid => $cname): ?>
+                        <option value="<?= $cid ?>"><?= escape($cname) ?></option>
+                        <?php endforeach; ?>
+                        <option value="none">Sem empresa</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <!-- Legenda dos botões de ação (ajuda para quem está aprendendo o sistema) -->
+            <div class="d-none d-md-flex align-items-center flex-wrap gap-3 px-3 py-2 border-bottom text-muted" style="font-size:0.78rem">
+                <span class="fw-medium text-dark">O que cada botão faz:</span>
+                <span><i class="bi bi-eye text-info"></i> Ver como (escolher empresa)</span>
+                <span><i class="bi bi-box-arrow-in-right text-success"></i> Entrar como o usuário</span>
+                <span><i class="bi bi-pencil text-primary"></i> Editar cadastro</span>
+                <span><i class="bi bi-pause-fill text-warning"></i>/<i class="bi bi-play-fill text-warning"></i> Ativar ou Desativar</span>
+            </div>
+            <!-- Desktop -->
+            <div class="table-responsive d-none d-md-block">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Nome</th>
+                            <th>Empresa</th>
+                            <th>Email</th>
+                            <th>Papel</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody">
+                        <?php foreach ($users as $u): ?>
+                        <tr class="user-row" data-name="<?= escape(mb_strtolower($u['name'] . ' ' . $u['email'])) ?>" data-company="<?= $u['company_id'] ?: 'none' ?>">
+                            <td><?= $u['id'] ?></td>
+                            <td><?= escape($u['name']) ?></td>
+                            <td style="font-size:0.85rem">
+                                <?php if (!empty($u['company_name'])): ?>
+                                    <a href="<?= baseUrl('companies/details/' . $u['company_id']) ?>" class="text-decoration-none">
+                                        <i class="bi bi-building"></i> <?= escape($u['company_name']) ?>
+                                    </a>
+                                    <?php $extra = (int)($u['extra_companies_count'] ?? 0); if ($extra > 0): ?>
+                                        <div class="mt-1">
+                                            <a href="<?= baseUrl('users/edit/' . $u['id']) ?>" class="badge bg-light text-primary text-decoration-none border" title="Vinculado a <?= $extra ?> empresa(s) adicional(is)">
+                                                <i class="bi bi-buildings"></i> +<?= $extra ?> empresa<?= $extra > 1 ? 's' : '' ?>
+                                            </a>
+                                        </div>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="text-muted">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-truncate" style="max-width:160px"><?= escape($u['email']) ?></td>
+                            <td><?= roleLabel($u['role']) ?></td>
+                            <td>
+                                <?= $u['is_active']
+                                    ? '<span class="badge bg-success" style="font-size:0.7rem">Ativo</span>'
+                                    : '<span class="badge bg-secondary" style="font-size:0.7rem">Inativo</span>' ?>
+                            </td>
+            <td>
+                                <div class="d-flex align-items-center gap-2 flex-nowrap">
+                                    <!-- Grupo 1: acessar o sistema como este usuário -->
+                                    <?php if ($u['is_active'] && $u['id'] != ($user['id'] ?? 0)): ?>
+                                    <div class="btn-group btn-group-sm" role="group" aria-label="Acessar como o usuário">
+                                        <a href="<?= baseUrl('login/verComo/' . $u['id']) ?>" class="btn btn-outline-info" title="Ver como (selecionar empresa)">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <a href="<?= baseUrl('login/loginAs/' . $u['id']) ?>" class="btn btn-outline-success" title="Entrar no sistema como este usuário" onclick="return confirm('Entrar no sistema como <?= escape($u['name']) ?>?')">
+                                            <i class="bi bi-box-arrow-in-right"></i>
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
+                                    <!-- Grupo 2: administrar o cadastro -->
+                                    <div class="btn-group btn-group-sm" role="group" aria-label="Administrar o cadastro">
+                                        <a href="<?= baseUrl('users/edit/' . $u['id']) ?>" class="btn btn-outline-primary" title="Editar cadastro">
+                                            <i class="bi bi-pencil"></i> Editar
+                                        </a>
+                                        <a href="<?= baseUrl('users/toggleStatus/' . $u['id']) ?>" class="btn btn-outline-warning" title="<?= $u['is_active'] ? 'Desativar (bloqueia o acesso)' : 'Ativar (libera o acesso)' ?>">
+                                            <i class="bi bi-<?= $u['is_active'] ? 'pause' : 'play' ?>-fill"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Mobile -->
+            <div class="d-md-none p-3" id="users-mobile">
+                <?php foreach ($users as $u): ?>
+                <div class="border rounded-3 p-3 mb-2 user-row" data-name="<?= escape(mb_strtolower($u['name'] . ' ' . $u['email'])) ?>" data-company="<?= $u['company_id'] ?: 'none' ?>">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div>
+                            <div class="fw-medium"><?= escape($u['name']) ?></div>
+                            <div class="text-muted small"><?= escape($u['email']) ?></div>
+                        </div>
+                        <?= $u['is_active']
+                            ? '<span class="badge bg-success" style="font-size:0.68rem">Ativo</span>'
+                            : '<span class="badge bg-secondary" style="font-size:0.68rem">Inativo</span>' ?>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center mt-2 flex-wrap" style="font-size:0.78rem">
+                        <span class="badge bg-light text-dark"><?= roleLabel($u['role']) ?></span>
+                        <?php if (!empty($u['company_name'])): ?><span class="badge bg-light text-dark"><i class="bi bi-building"></i> <?= escape($u['company_name']) ?></span><?php $extra = (int)($u['extra_companies_count'] ?? 0); if ($extra > 0): ?><span class="badge bg-light text-primary border"><i class="bi bi-buildings"></i> +<?= $extra ?> empresa<?= $extra > 1 ? 's' : '' ?></span><?php endif; ?><?php endif; ?>
+                        <?php if ($u['phone']): ?><span class="text-muted"><?= escape($u['phone']) ?></span><?php endif; ?>
+                    </div>
+                    <div class="mt-2 d-flex gap-2 flex-wrap">
+                        <?php if ($u['is_active'] && $u['id'] != ($user['id'] ?? 0)): ?>
+                        <a href="<?= baseUrl('login/verComo/' . $u['id']) ?>" class="btn btn-sm btn-outline-info"><i class="bi bi-eye"></i> Ver como</a>
+                        <a href="<?= baseUrl('login/loginAs/' . $u['id']) ?>" class="btn btn-sm btn-outline-success" onclick="return confirm('Entrar como <?= escape($u['name']) ?>?')"><i class="bi bi-box-arrow-in-right"></i> Entrar como</a>
+                        <?php endif; ?>
+                        <a href="<?= baseUrl('users/edit/' . $u['id']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a>
+                        <a href="<?= baseUrl('users/toggleStatus/' . $u['id']) ?>" class="btn btn-sm btn-outline-warning">
+                            <i class="bi bi-<?= $u['is_active'] ? 'pause' : 'play' ?>-fill"></i> <?= $u['is_active'] ? 'Desativar' : 'Ativar' ?>
+                        </a>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div id="no-users-msg" class="text-center text-muted py-4" style="display:none">Nenhum usuário encontrado.</div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const nameInput = document.getElementById('filter-name');
+    const companySelect = document.getElementById('filter-company');
+    const rows = document.querySelectorAll('.user-row');
+    const noMsg = document.getElementById('no-users-msg');
+
+    function applyFilters() {
+        const term = (nameInput.value || '').trim().toLowerCase();
+        const company = companySelect.value;
+        let visible = 0;
+
+        rows.forEach(function(row) {
+            const name = row.getAttribute('data-name') || '';
+            const rowCompany = row.getAttribute('data-company') || '';
+            const matchName = term === '' || name.indexOf(term) !== -1;
+            const matchCompany = company === '' || rowCompany === company;
+            const show = matchName && matchCompany;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+
+        // visible conta desktop + mobile; se nada visível em nenhum, mostra msg
+        if (noMsg) noMsg.style.display = visible === 0 ? 'block' : 'none';
+    }
+
+    if (nameInput) nameInput.addEventListener('input', applyFilters);
+    if (companySelect) companySelect.addEventListener('change', applyFilters);
+})();
+</script>
+
+<?php require APP_PATH . '/views/layouts/footer.php'; ?>

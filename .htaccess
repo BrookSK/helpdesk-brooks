@@ -1,0 +1,28 @@
+RewriteEngine On
+
+# Bloqueia acesso HTTP ao diretório interno de gravações (journals/chunks das
+# sessões de vídeo). A raiz do projeto é servida pelo Apache, então sem esta
+# regra o conteúdo de storage/ ficaria acessível pela web.
+RewriteRule ^storage/ - [F,L]
+
+# Servir assets diretamente do /public
+RewriteRule ^assets/(.*)$ public/assets/$1 [L]
+RewriteRule ^uploads/(.*)$ public/uploads/$1 [L]
+RewriteRule ^import\.png$ public/import.png [L]
+RewriteRule ^favicon\.ico$ public/favicon.ico [L]
+RewriteRule ^cron-notifications\.php$ public/cron-notifications.php [L]
+RewriteRule ^cron\.php$ public/cron.php [L]
+
+# Se o arquivo ou diretório existir na raiz, entrega direto
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Caso contrário, envia tudo para o front controller em /public com a URL
+RewriteRule ^(.*)$ public/index.php?url=$1 [QSA,L]
+
+# Aumentar limite de upload para 500MB
+php_value upload_max_filesize 500M
+php_value post_max_size 512M
+php_value max_execution_time 600
+php_value max_input_time 600

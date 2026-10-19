@@ -1,0 +1,1015 @@
+<?php
+
+/**
+ * Automação de prospecção via Apollo.io.
+ *
+ * Pipeline (economia de créditos — NUNCA revela antes de filtrar):
+ *   Apollo People Search  → usa os dados profissionais já retornados
+ *     → deduplicação (apollo_id / e-mail / telefone / nome+empresa / lead existente)
+ *     → filtro ICP
+ *     → Lead Score
+ *     → seleção dos melhores (limite diário configurável)
+ *     → REVEAL apenas do e-mail (telefone é progressivo, revelado só no step de WhatsApp)
+ *     → cria/atualiza Lead (LeadResolver → whatsapp_contacts)
+ *     → cria card no Board (coluna configurada)
+ *     → inscreve na sequência (SequenceEngine)
+ *
+ * Toda a configuração (ICP, filtros, board, coluna, sequência, limites) vem da
+ * tabela `apollo_campaigns` — populada pelo SQL de configuração. Nada é fixo no código.
+ */
+class ApolloProspectingService
+{
+    const LOCK_KEY = 'apollo_prospecting_lock';
+    const LOCK_TTL = 600; // 10 min
+
+    private $db;
+    private $apollo;
+
+    public function __construct()
+    {
+        $this->db = Database::getInstance();
+        $this->apollo = new ApolloApi();
+    }
+
+    /** Campanhas ativas (uma ou várias configurações de captação). */
+    public function activeCampaigns()
+    {
+        return $this->db->fetchAll("SELECT * FROM apollo_campaigns WHERE is_active = 1 ORDER BY id ASC");
+    }
+
+    /**
+     * Executa a captação de todas as campanhas ativas (chamado pelo cron).
+     * Respeita janela de dias/horário e o limite diário de cada campanha.
+     * @return array métricas por campanha
+     */
+    public function runDue()
+    {
+        if (!$this->apollo->isConfigured()) {
+            return ['error' => 'Apollo não configurado.'];
+        }
+        if ($this->isLocked()) {
+            return ['skipped' => true, 'reason' => 'Execução em andamento'];
+        }
+        $this->lock();
+
+        $out = [];
+        try {
+            foreach ($this->activeCampaigns() as $camp) {
+                if (!$this->isWithinSchedule($camp)) {
+                    $out[] = ['campaign' => $camp['id'], 'skipped' => 'fora da janela'];
+                    continue;
+                }
+                $already = $this->capturedToday($camp['id']);
+                $target = max(0, (int)$camp['daily_target'] - $already);
+                if ($target <= 0) {
+                    $out[] = ['campaign' => $camp['id'], 'skipped' => 'meta diária atingida', 'captured_today' => $already];
+                    continue;
+                }
+                $out[] = $this->runCampaign($camp, $target);
+            }
+        } finally {
+            $this->unlock();
+        }
+        return $out;
+    }
+
+    /**
+     * Executa UMA campanha específica manualmente (uso na BETA, como ponte para o
+     * disparo que o cron faria). Aplica EXATAMENTE as mesmas guardas do runDue():
+     * lock global, janela de dias/horário e meta diária. Reutiliza runCampaign() —
+     * nenhuma lógica paralela nem acelerada. Em produção, o cron segue chamando runDue().
+     * @return array métricas da campanha (mesmo formato do runDue por campanha)
+     */
+    public function runDueCampaign($campaignId)
+    {
+        if (!$this->apollo->isConfigured()) {
+            return ['error' => 'Apollo não configurado.'];
+        }
+        $camp = $this->db->fetch("SELECT * FROM apollo_campaigns WHERE id = ?", [(int) $campaignId]);
+        if (!$camp) return ['error' => 'Campanha não encontrada.'];
+        if (empty($camp['is_active'])) return ['campaign' => $camp['id'], 'skipped' => 'campanha inativa'];
+
+        if ($this->isLocked()) {
+            return ['skipped' => true, 'reason' => 'Execução em andamento'];
+        }
+        $this->lock();
+        try {
+            if (!$this->isWithinSchedule($camp)) {
+                return ['campaign' => $camp['id'], 'skipped' => 'fora da janela'];
+            }
+            $already = $this->capturedToday($camp['id']);
+            $target = max(0, (int) $camp['daily_target'] - $already);
+            if ($target <= 0) {
+                return ['campaign' => $camp['id'], 'skipped' => 'meta diária atingida', 'captured_today' => $already];
+            }
+            return $this->runCampaign($camp, $target);
+        } finally {
+            $this->unlock();
+        }
+    }
+
+    /**
+     * Executa uma campanha até capturar $target leads novos.
+     * Roteia conforme a origem configurada (Apollo x Meus Leads).
+     * @return array métricas da campanha
+     */
+    public function runCampaign(array $camp, $target, $manual = false)
+    {
+        $source = $camp['lead_source'] ?? 'apollo';
+        if ($source === 'my_leads') {
+            return $this->runMyLeadsCampaign($camp, $target, $manual);
+        }
+        return $this->runApolloCampaign($camp, $target, $manual);
+    }
+
+    /**
+     * Origem APOLLO — fonte contínua de novos leads.
+     *
+     * Fluxo (a ordem importa; economia de créditos):
+     *   Apollo → Aplicar ICP/Filtros → Identificar candidatos → Verificar duplicidade
+     *   → Revelar dados → Criar em Meus Leads → Atribuir ao Super Admin → Inscrever na sequência
+     *
+     * Pagina continuamente até atingir $target NOVOS elegíveis ou esgotar resultados.
+     * @return array métricas da campanha
+     */
+    public function runApolloCampaign(array $camp, $target, $manual = false)
+    {
+        $m = [
+            'campaign' => $camp['id'], 'name' => $camp['name'], 'source' => 'apollo',
+            'searched' => 0, 'analyzed' => 0, 'duplicated' => 0, 'out_of_icp' => 0, 'low_score' => 0,
+            'selected' => 0, 'revealed_email' => 0, 'reveal_failed' => 0, 'imported' => 0, 'enrolled' => 0,
+            'pages' => 0,
+        ];
+
+        $filters = json_decode($camp['search_filters'] ?? '{}', true) ?: [];
+        $icp = json_decode($camp['icp_rules'] ?? '{}', true) ?: [];
+        $minScore = (int)($camp['min_score'] ?? 0);
+        $perPage = min(100, max(10, (int)($camp['search_per_page'] ?? 50)));
+        $leadModel = new ApolloLead();
+
+        // Estado da busca: continua da página onde parou (não recomeça do zero).
+        $page = max(1, (int)($camp['search_page'] ?? 1));
+        $totalPages = null;
+        $maxPagesPerRun = 20; // trava de segurança contra loop/consumo excessivo
+
+        // Continua paginando enquanto não atingir a meta de NOVOS elegíveis
+        // e ainda houver resultados disponíveis para esta busca.
+        while ($m['enrolled'] < $target && $m['pages'] < $maxPagesPerRun) {
+            $filters['page'] = $page;
+            $filters['per_page'] = $perPage;
+
+            $res = $this->apollo->searchPeople($filters);
+            if (empty($res['success'])) {
+                $m['error'] = $res['error'] ?? 'Falha na busca';
+                $this->logCampaign($camp['id'], 'search_failed', $m['error'] . ' (página ' . $page . ')');
+                break;
+            }
+            // A Apollo pode devolver resultados em "people" e/ou "contacts" (já na conta).
+            // Usar "??" esconde os que estão na outra lista quando a primeira vem vazia.
+            $rp = is_array($res['data']['people'] ?? null) ? $res['data']['people'] : [];
+            $rc = is_array($res['data']['contacts'] ?? null) ? $res['data']['contacts'] : [];
+            $people = array_merge($rp, $rc);
+            $pagination = $res['data']['pagination'] ?? [];
+            $totalPages = (int)($pagination['total_pages'] ?? ($totalPages ?? 1));
+            $m['pages']++;
+            $m['searched'] += count($people);
+            $this->logCampaign($camp['id'], 'searched', count($people) . ' candidatos (página ' . $page . ')');
+
+            if (empty($people)) { $page = 1; break; } // sem resultados: reinicia ciclo
+
+            // Qualifica os candidatos desta página (tudo barato: usa dados da busca)
+            $candidates = [];
+            foreach ($people as $p) {
+                if (empty($p['id'])) continue;
+                $m['analyzed']++;
+
+                // DEDUP antes de qualquer reveal — jamais gasta crédito com quem já conhecemos.
+                if ($this->isDuplicate($p, $camp, $manual)) { $m['duplicated']++; continue; }
+
+                // Preserva os dados da busca na staging (sem reveal)
+                $localId = $leadModel->upsertFromApollo($p, null);
+                if (!$localId) continue;
+
+                // Filtro ICP sobre os dados da busca
+                if (!$this->matchesIcp($p, $icp)) { $m['out_of_icp']++; continue; }
+
+                // Lead Score sobre os dados da busca
+                $score = $this->scoreProspect($p, $icp);
+                if ($score < $minScore) { $m['low_score']++; continue; }
+
+                $candidates[] = ['person' => $p, 'local_id' => $localId, 'score' => $score];
+            }
+
+            // Seleciona os melhores desta página até completar a meta restante
+            usort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
+            $remaining = $target - $m['enrolled'];
+            $selected = array_slice($candidates, 0, max(0, $remaining));
+            $m['selected'] += count($selected);
+
+            // Só agora consome crédito: revela, cria o lead e inscreve
+            foreach ($selected as $c) {
+                $r = $this->revealAndEnroll($camp, $c['person'], $c['local_id'], $c['score'], $manual);
+                if ($r === 'enrolled') { $m['revealed_email']++; $m['imported']++; $m['enrolled']++; }
+                elseif ($r === 'reveal_failed') { $m['reveal_failed']++; }
+            }
+
+            // Avança a página (circular pelo total conhecido)
+            $page = ($totalPages > 0 && $page >= $totalPages) ? 1 : $page + 1;
+            if ($totalPages > 0 && $m['pages'] >= $totalPages) break; // varreu tudo
+        }
+
+        // Persiste o cursor de busca e os contadores de estado
+        $this->db->update('apollo_campaigns', ['search_page' => $page], 'id = ?', [$camp['id']]);
+        $this->saveCampaignStats($camp['id'], $m);
+        $this->logCampaign($camp['id'], 'done', json_encode($m, JSON_UNESCAPED_UNICODE));
+        return $m;
+    }
+
+    /**
+     * Origem MEUS LEADS — inscreve leads já existentes no CRM na sequência.
+     * NÃO faz busca/reveal na Apollo e NÃO altera o responsável do lead.
+     *
+     * Fluxo: Meus Leads → aplicar filtros → verificar elegibilidade/dup → inscrever.
+     * @return array métricas da campanha
+     */
+    public function runMyLeadsCampaign(array $camp, $target, $manual = false)
+    {
+        $m = [
+            'campaign' => $camp['id'], 'name' => $camp['name'], 'source' => 'my_leads',
+            'searched' => 0, 'analyzed' => 0, 'duplicated' => 0, 'out_of_icp' => 0, 'low_score' => 0,
+            'selected' => 0, 'revealed_email' => 0, 'reveal_failed' => 0, 'imported' => 0, 'enrolled' => 0,
+            'pages' => 0,
+        ];
+
+        $sequenceId = (int)($camp['sequence_id'] ?? 0);
+        if (!$sequenceId) {
+            $m['error'] = 'Campanha sem sequência configurada.';
+            $this->saveCampaignStats($camp['id'], $m);
+            $this->logCampaign($camp['id'], 'done', json_encode($m, JSON_UNESCAPED_UNICODE));
+            return $m;
+        }
+
+        // Seleção manual tem prioridade: se há IDs escolhidos, usa apenas eles
+        // (ignora meta/filtros — o operador decidiu exatamente quem inscrever).
+        $selectedIds = json_decode($camp['my_leads_ids'] ?? '[]', true);
+        $selectedIds = is_array($selectedIds) ? array_values(array_filter(array_map('intval', $selectedIds))) : [];
+
+        // Canal da sequência define a elegibilidade dos leads (email/whatsapp/mixed).
+        $channel = $this->sequenceChannel($sequenceId);
+
+        if (!empty($selectedIds)) {
+            // No disparo manual, inclui até os descadastrados (serão reativados no enroll).
+            $rows = $this->fetchMyLeadsByIds($selectedIds, $channel, $manual);
+            $target = count($rows); // inscreve todos os selecionados
+        } else {
+            $filters = json_decode($camp['my_leads_filters'] ?? '{}', true) ?: [];
+            // Candidatos: leads do CRM elegíveis ao canal, não descadastrados, pelos filtros.
+            $rows = $this->fetchMyLeadsCandidates($filters, max(1, $target) * 5, $channel);
+        }
+        $m['searched'] = count($rows);
+
+        $engine = new SequenceEngine();
+        foreach ($rows as $lead) {
+            if ($m['enrolled'] >= $target) break;
+            $m['analyzed']++;
+
+            // Já inscrito nesta sequência? No disparo AUTOMÁTICO, um lead que já
+            // passou (qualquer status) NÃO é reinscrito (evita loop). No disparo
+            // MANUAL, o operador quer forçar: reinscreve/reinicia mesmo assim.
+            if (!$manual && $this->alreadyInSequence((int)$lead['id'], $sequenceId)) { $m['duplicated']++; continue; }
+
+            $r = $engine->enroll($sequenceId, (int)$lead['id'], $camp['created_by'] ?: null, $manual);
+            if (!empty($r['success'])) {
+                $m['enrolled']++;
+                $this->logEnrolled($camp['id'], (int)$lead['id'], 'Meus Leads → sequência');
+            } else {
+                $m['duplicated']++;
+            }
+        }
+
+        $this->saveCampaignStats($camp['id'], $m);
+        $this->logCampaign($camp['id'], 'done', json_encode($m, JSON_UNESCAPED_UNICODE));
+        return $m;
+    }
+
+    /**
+     * Revela o e-mail do prospect selecionado (1 crédito), cria/atualiza o lead,
+     * adiciona ao board e inscreve na sequência.
+     * @return string 'enrolled' | 'reveal_failed' | 'skipped'
+     */
+    private function revealAndEnroll(array $camp, array $person, $localId, $score, $manual = false)
+    {
+        $leadModel = new ApolloLead();
+
+        // Roteamento automático: a campanha escolhe a sequência por canal conforme
+        // os dados encontrados. Para fins de reveal/elegibilidade, comporta-se como
+        // "mixed" (tenta e-mail, aceita e-mail OU telefone).
+        $autoRoute = !empty($camp['auto_route']);
+
+        // Canal da campanha (via sequência): define se o e-mail é obrigatório.
+        //   email → precisa de e-mail; whatsapp → precisa de telefone;
+        //   mixed → precisa de e-mail OU telefone.
+        $channel = $autoRoute ? 'mixed' : $this->sequenceChannel((int)($camp['sequence_id'] ?? 0));
+        $emailRequired = ($channel === 'email');
+
+        // Reaproveita e-mail já revelado, se houver (não gasta crédito de novo)
+        $stored = $leadModel->findById($localId);
+        $email = $this->extractEmail($person) ?: ($stored['email'] ?? null);
+        $emailIsReal = $email && stripos($email, 'email_not_unlocked') === false && filter_var($email, FILTER_VALIDATE_EMAIL);
+
+        // Só revela e-mail quando o canal usa e-mail (email/mixed). Numa campanha
+        // exclusiva de WhatsApp não gasta crédito revelando e-mail.
+        if (!$emailIsReal && $channel !== 'whatsapp') {
+            // TRAVA DE CRÉDITO DIÁRIO (também na automação): antes valia só no fluxo
+            // manual (CrmController), então a prospecção automática revelava e-mails
+            // ilimitadamente. Agora respeita users.apollo_daily_credits do dono da
+            // campanha. Sem crédito → não revela (economia); segue sem reveal.
+            if (!$this->canSpendCredit($camp, ApolloCreditUsage::COST_EMAIL)) {
+                $this->logCampaign($camp['id'], 'credit_limit', 'Limite diário de créditos Apollo atingido — reveal de e-mail ignorado.');
+                if ($emailRequired) return 'reveal_failed';
+                // canal mixed sem e-mail: tenta seguir só com telefone/reveal futuro
+            } else {
+            // REVEAL apenas do e-mail (economia — telefone é progressivo)
+            try {
+                $res = $this->apollo->enrichPerson([
+                    'id' => $person['id'],
+                    'first_name' => $person['first_name'] ?? null,
+                    'last_name' => $person['last_name'] ?? null,
+                    'name' => $person['name'] ?? null,
+                    'organization_name' => ($person['organization']['name'] ?? null),
+                    'domain' => ($person['organization']['primary_domain'] ?? null),
+                    'reveal_personal_emails' => true,
+                ]);
+            } catch (\Throwable $e) {
+                $this->logCampaign($camp['id'], 'reveal_error', $e->getMessage());
+                if ($emailRequired) return 'reveal_failed';
+                $res = null;
+            }
+            if (!empty($res['success'])) {
+                $revealed = $res['data']['person'] ?? null;
+                if ($revealed) {
+                    $leadModel->upsertFromApollo($revealed, null);
+                    $person = array_merge($person, $revealed);
+                    $email = $this->extractEmail($revealed) ?: $email;
+                }
+                // Registra consumo de crédito (1 crédito por reveal de e-mail) e
+                // debita a cota diária do dono da campanha.
+                $this->recordCredit($camp['id'], $localId, 'email', ApolloCreditUsage::COST_EMAIL);
+            } elseif ($emailRequired) {
+                return 'reveal_failed';
+            }
+            } // fim do bloco "tem crédito"
+        }
+
+        $emailIsReal = $email && stripos($email, 'email_not_unlocked') === false && filter_var($email, FILTER_VALIDATE_EMAIL);
+
+        // Telefone da busca (sem custo). Serve para o canal WhatsApp/mixed.
+        // Obs.: a Apollo costuma NÃO trazer telefone na busca — ele é revelado
+        // depois, de forma assíncrona, pelo bloco "reveal_phone" da sequência.
+        $phone = $this->extractPhoneFromPerson($person) ?: ($stored['phone'] ?? null);
+        $hasPhone = !empty($phone);
+
+        // A sequência tem um bloco de reveal de telefone? Então leads sem telefone
+        // imediato ainda são elegíveis nos canais whatsapp/mixed (o número chega depois).
+        $seqRevealsPhone = $this->sequenceHasPhoneReveal((int)($camp['sequence_id'] ?? 0));
+
+        // Verifica elegibilidade final conforme o canal antes de criar o lead.
+        if ($channel === 'email' && !$emailIsReal) return 'reveal_failed';
+        if ($channel === 'whatsapp' && !$hasPhone && !$seqRevealsPhone) return 'reveal_failed';
+        if ($channel === 'mixed' && !$emailIsReal && !$hasPhone && !$seqRevealsPhone) return 'reveal_failed';
+
+        // Monta as notas comerciais no padrão que o MessageTemplate lê (Cargo/Empresa/LinkedIn)
+        $org = $person['organization'] ?? [];
+        $notesParts = [];
+        if (!empty($person['title'])) $notesParts[] = 'Cargo: ' . $person['title'];
+        if (!empty($org['name'])) $notesParts[] = 'Empresa: ' . $org['name'];
+        if (!empty($person['linkedin_url'])) $notesParts[] = 'LinkedIn: ' . $person['linkedin_url'];
+
+        $name = $person['name'] ?? trim(($person['first_name'] ?? '') . ' ' . ($person['last_name'] ?? ''));
+        $name = $name ?: ($org['name'] ?? 'Lead Apollo');
+
+        // REGRA DE PROPRIEDADE: todo lead NOVO captado automaticamente pela Apollo
+        // pertence ao Super Admin (sem round-robin, sem o criador, sem último responsável).
+        $superAdminId = $this->superAdminId();
+
+        // Existe? (dedup central por e-mail revelado) — para preservar dono de lead já existente.
+        $resolver = new LeadResolver();
+        $preExistingId = $emailIsReal ? $resolver->findByEmail($email) : null;
+
+        // Cria/atualiza o Lead via LeadResolver (dedup central; nunca base paralela).
+        // Passa e-mail e/ou telefone conforme disponível — o resolver deduplica por
+        // ambos. Só define assigned_to (Super Admin) quando o lead é NOVO.
+        $contactId = $resolver->resolve([
+            'name' => $name,
+            'email' => $emailIsReal ? $email : null,
+            'phone' => $hasPhone ? $phone : null,
+            'linkedin_url' => $person['linkedin_url'] ?? null,
+            'company' => $org['name'] ?? null,
+            'source' => 'apollo',
+            'assigned_to' => $preExistingId ? null : ($superAdminId ?: null),
+            'briefing' => [
+                'need' => $org['industry'] ?? null,
+                'notes' => implode(' | ', $notesParts) ?: null,
+            ],
+        ], $camp['created_by'] ?: null);
+
+        if (!$contactId) return 'reveal_failed';
+
+        // Garante a atribuição ao Super Admin para leads NOVOS (mesmo que o resolver
+        // não a tenha aplicado). Nunca sobrescreve o dono de um lead pré-existente.
+        if (!$preExistingId && $superAdminId) {
+            $this->db->update('whatsapp_contacts', ['assigned_to' => $superAdminId], 'id = ? AND (assigned_to IS NULL OR assigned_to = 0)', [$contactId]);
+        }
+
+        // Vincula o staging ao lead do CRM + registra origem/campanha/ICP
+        $leadModel->markImported($localId, $contactId, $camp['created_by'] ?: null);
+
+        // Score inicial do lead
+        try { (new LeadScoreService())->add($contactId, (int)$score, 'apollo_prospecting'); } catch (\Throwable $e) {}
+        (new LeadTimelineService())->add($contactId, 'origin',
+            'Capturado via Apollo (campanha: ' . $camp['name'] . ')',
+            ['score' => $score, 'campaign_id' => $camp['id'], 'icp' => json_decode($camp['icp_rules'] ?? '{}', true)]);
+        $this->logImported($camp['id'], $localId, $contactId, $name . ($preExistingId ? ' (existente)' : ' (novo → Super Admin)'));
+
+        // Board: cria card na coluna configurada (evita duplicar se já houver)
+        if (!empty($camp['column_id'])) {
+            $exists = $this->db->fetch("SELECT id FROM crm_cards WHERE contact_id = ? LIMIT 1", [$contactId]);
+            if (!$exists) {
+                (new CrmBoard())->createCard([
+                    'column_id' => (int)$camp['column_id'],
+                    'title' => $name,
+                    'contact_id' => $contactId,
+                    'created_by' => $camp['created_by'] ?: null,
+                    'assigned_to' => $preExistingId ? null : ($superAdminId ?: null),
+                ]);
+            }
+        }
+
+        // Sequência: inscreve o lead (idempotente por sequence+contact).
+        // Com auto_route, escolhe a sequência pelo canal conforme os dados encontrados:
+        //   e-mail + telefone → mixed | só e-mail → email | só telefone → whatsapp.
+        $targetSeq = (int)($camp['sequence_id'] ?? 0);
+        $routeLabel = 'Apollo → sequência';
+        if (!empty($camp['auto_route'])) {
+            if ($emailIsReal && $hasPhone) {
+                $targetSeq = (int)($camp['sequence_id_mixed'] ?? 0) ?: $targetSeq;
+                $routeLabel = 'Apollo → sequência mista (e-mail + telefone)';
+            } elseif ($emailIsReal) {
+                $targetSeq = (int)($camp['sequence_id_email'] ?? 0) ?: $targetSeq;
+                $routeLabel = 'Apollo → sequência de e-mail';
+            } elseif ($hasPhone) {
+                $targetSeq = (int)($camp['sequence_id_whatsapp'] ?? 0) ?: $targetSeq;
+                $routeLabel = 'Apollo → sequência de WhatsApp';
+            }
+        }
+        if ($targetSeq) {
+            // BLOQUEIO "sem interesse": nunca (re)prospectar quem já disse não.
+            // Cobre o flag unsubscribed E a tag textual "sem interesse" (a dedup
+            // por e-mail/telefone antes disso não checa interesse). Vale para o
+            // disparo automático; o manual do operador pode forçar.
+            if (!$manual && $this->contactOptedOut($contactId)) {
+                $this->logCampaign($camp['id'], 'skipped', 'Lead sem interesse — não reprospectado (contact ' . $contactId . ').');
+                return 'skipped';
+            }
+            // BLOQUEIO de reenvio: no automático, quem já passou por esta sequência
+            // (qualquer status) não é reinscrito (evita loop de reenvio). Antes essa
+            // guarda só existia no fluxo "Meus Leads".
+            if (!$manual && $this->alreadyInSequence($contactId, $targetSeq)) {
+                $this->logCampaign($camp['id'], 'skipped', 'Lead já passou por esta sequência — não reinscrito (contact ' . $contactId . ').');
+                return 'skipped';
+            }
+            // Propaga a janela de horário/dias da CAMPANHA para a sequência, para
+            // que os envios (inclusive WhatsApp) respeitem o que foi configurado
+            // na campanha — e não o horário default da sequência.
+            $this->syncSequenceWindow($targetSeq, $camp);
+            (new SequenceEngine())->enroll($targetSeq, $contactId, $camp['created_by'] ?: null, $manual);
+            $this->logEnrolled($camp['id'], $contactId, $routeLabel);
+        }
+
+        return 'enrolled';
+    }
+
+    /**
+     * Lead recusou/optou por sair? true se unsubscribed=1 OU tem a etiqueta
+     * "sem interesse" vinculada. Base para não reprospectar quem já disse não.
+     */
+    private function contactOptedOut($contactId)
+    {
+        if (!$contactId) return false;
+        $c = $this->db->fetch("SELECT unsubscribed FROM whatsapp_contacts WHERE id = ? LIMIT 1", [$contactId]);
+        if ($c && !empty($c['unsubscribed'])) return true;
+        try {
+            $r = $this->db->fetch(
+                "SELECT 1 FROM whatsapp_contact_labels ccl
+                 JOIN whatsapp_labels l ON l.id = ccl.label_id
+                 WHERE ccl.contact_id = ? AND LOWER(l.name) IN ('sem interesse','sem interese') LIMIT 1",
+                [$contactId]
+            );
+            return (bool) $r;
+        } catch (\Throwable $e) { return false; }
+    }
+
+    /**
+     * Sincroniza a janela de envio (horário/dias/fim de semana) da sequência-alvo
+     * com a configuração da campanha. Assim o que o usuário definir na campanha
+     * (dias da semana + início/fim) é o que os envios da sequência respeitam.
+     * Só atualiza as colunas que existem no schema (idempotente/tolerante).
+     */
+    private function syncSequenceWindow($sequenceId, array $camp)
+    {
+        if (!$sequenceId) return;
+        try {
+            $data = [];
+            if (!empty($camp['window_start'])) $data['window_start'] = $camp['window_start'];
+            if (!empty($camp['window_end']))   $data['window_end']   = $camp['window_end'];
+
+            $days = trim((string) ($camp['days_of_week'] ?? ''));
+            if ($this->sequenceHasColumn('days_of_week')) {
+                $data['days_of_week'] = $days !== '' ? $days : null;
+                // send_weekends coerente com os dias escolhidos (sáb=6/dom=7).
+                if ($days !== '') {
+                    $set = array_map('intval', explode(',', $days));
+                    $data['send_weekends'] = (in_array(6, $set, true) || in_array(7, $set, true)) ? 1 : 0;
+                }
+            }
+            if (!empty($data)) {
+                $this->db->update('email_sequences', $data, 'id = ?', [(int) $sequenceId]);
+            }
+        } catch (\Throwable $e) { /* nunca quebra a prospecção por causa da sync */ }
+    }
+
+    /** Verifica (com cache) se uma coluna existe em email_sequences. */
+    private function sequenceHasColumn($column)
+    {
+        static $cols = null;
+        if ($cols === null) {
+            $cols = [];
+            try {
+                $rows = $this->db->fetchAll(
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_sequences'"
+                );
+                foreach ($rows as $r) $cols[strtolower($r['COLUMN_NAME'])] = true;
+            } catch (\Throwable $e) { $cols = []; }
+        }
+        return isset($cols[strtolower($column)]);
+    }
+
+    /** ID do primeiro Super Admin ativo (destino padrão dos leads novos da Apollo). */
+    private function superAdminId()
+    {
+        $r = $this->db->fetch("SELECT id FROM users WHERE role='super_admin' AND is_active=1 ORDER BY id ASC LIMIT 1");
+        return $r ? (int)$r['id'] : null;
+    }
+
+    // ============ Deduplicação ============
+
+    /**
+     * Deduplicação COMPLETA antes de gastar qualquer crédito.
+     * Uma pessoa jamais é prospectada duas vezes. Verifica, prioritariamente por
+     * IDs únicos da Apollo e complementarmente por e-mail/telefone:
+     *   1) staging Apollo já importado (apollo_id → contact_id)
+     *   2) já processado/prospectado nesta campanha (log enrolled com este apollo_lead)
+     *   3) já captado por QUALQUER campanha automática (quando global_dedupe=1)
+     *   4) já existe em Meus Leads (por e-mail ou telefone)
+     *   5) já está inscrito na sequência da campanha
+     * NÃO usa nome como critério.
+     */
+    private function isDuplicate(array $person, array $camp, $manual = false)
+    {
+        $apolloId = $person['id'] ?? null;
+        $leadModel = new ApolloLead();
+
+        // 1) Staging Apollo já vinculado a um lead do CRM
+        if ($apolloId) {
+            $staging = $leadModel->findByApolloId($apolloId);
+            if ($staging && !empty($staging['contact_id'])) {
+                // Disparo MANUAL: o operador quer forçar. Reinscreve/reinicia o lead
+                // conhecido na sequência SEM revelar de novo (não gasta crédito).
+                if ($manual) $this->manualReenroll((int)$staging['contact_id'], $camp);
+                return true; // já importado antes: nunca revela de novo
+            }
+        }
+
+        // 4) Já existe em Meus Leads por e-mail (dado da busca, quando presente) ou telefone
+        $resolver = new LeadResolver();
+        $email = $resolver->normalizeEmail($this->extractEmail($person));
+        $contactId = null;
+        if ($email) {
+            $r = $this->db->fetch("SELECT id FROM whatsapp_contacts WHERE lead_email = ? LIMIT 1", [$email]);
+            if ($r) $contactId = (int)$r['id'];
+        }
+        if (!$contactId) {
+            $phone = $resolver->normalizePhone($this->extractPhoneFromPerson($person));
+            if ($phone && strlen($phone) >= 8) {
+                $last8 = substr($phone, -8);
+                $r = $this->db->fetch(
+                    "SELECT id FROM whatsapp_contacts
+                     WHERE COALESCE(is_group,0)=0
+                       AND REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+','') LIKE ?
+                     LIMIT 1",
+                    ['%' . $last8]
+                );
+                if ($r) $contactId = (int)$r['id'];
+            }
+        }
+        if ($contactId) {
+            // Disparo MANUAL: força a (re)inscrição do lead conhecido sem revelar.
+            if ($manual) $this->manualReenroll($contactId, $camp);
+            // já conhecido → não reprospecta (não gasta crédito de reveal)
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * (Re)inscreve um contato já conhecido na sequência da campanha em disparo
+     * MANUAL, reiniciando a cadência mesmo que já tenha rodado antes. Não gasta
+     * crédito de reveal (o lead já existe). Respeita a rota por canal se auto_route.
+     */
+    private function manualReenroll($contactId, array $camp)
+    {
+        $targetSeq = (int)($camp['sequence_id'] ?? 0);
+        if (!$targetSeq) return;
+        try {
+            (new SequenceEngine())->enroll($targetSeq, (int)$contactId, $camp['created_by'] ?: null, true);
+            $this->logEnrolled($camp['id'], (int)$contactId, 'Manual → sequência (reinício)');
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /** Verifica se o staging já foi prospectado (log 'enrolled') nesta campanha ou em qualquer uma (global). */
+    private function stagingAlreadyProspected($stagingId, array $camp)
+    {
+        $global = !empty($camp['global_dedupe']);
+        if ($global) {
+            $r = $this->db->fetch(
+                "SELECT id FROM apollo_prospecting_log WHERE apollo_lead_id = ? AND action = 'enrolled' LIMIT 1",
+                [$stagingId]
+            );
+            return (bool)$r;
+        }
+        $r = $this->db->fetch(
+            "SELECT id FROM apollo_prospecting_log WHERE apollo_lead_id = ? AND campaign_id = ? AND action = 'enrolled' LIMIT 1",
+            [$stagingId, $camp['id']]
+        );
+        return (bool)$r;
+    }
+
+    /**
+     * Verifica se o contato JÁ TEM participação nesta sequência — em QUALQUER
+     * status (active, paused, finished, stopped, failed).
+     *
+     * IMPORTANTE (correção de loop): a captação automática roda a cada tick do
+     * cron. Se considerássemos apenas active/paused, um lead que já concluiu a
+     * cadência (finished/stopped) seria RE-INSCRITO no tick seguinte, e o enroll
+     * reativa o participante zerando o current_node — reiniciando a cadência do
+     * zero e reenviando todas as mensagens em loop infinito.
+     *
+     * Por isso, para a automação, um contato que já passou pela sequência NUNCA
+     * é reinscrito automaticamente. Reenvio deliberado é feito manualmente pelo
+     * operador (CRM → inscrever na sequência), que chama enroll() diretamente.
+     */
+    private function alreadyInSequence($contactId, $sequenceId)
+    {
+        if (!$contactId || !$sequenceId) return false;
+        $r = $this->db->fetch(
+            "SELECT id FROM sequence_participants WHERE sequence_id = ? AND contact_id = ? LIMIT 1",
+            [$sequenceId, $contactId]
+        );
+        return (bool)$r;
+    }
+
+    /** Extrai o primeiro telefone disponível do payload da busca (sem reveal). */
+    private function extractPhoneFromPerson(array $person)
+    {
+        if (!empty($person['phone_numbers']) && is_array($person['phone_numbers'])) {
+            foreach ($person['phone_numbers'] as $ph) {
+                if (!empty($ph['sanitized_number'])) return $ph['sanitized_number'];
+                if (!empty($ph['raw_number'])) return $ph['raw_number'];
+            }
+        }
+        return $person['sanitized_phone'] ?? ($person['phone'] ?? null);
+    }
+
+    // ============ Meus Leads (origem alternativa) ============
+
+    /**
+     * Busca candidatos em "Meus Leads" (CRM) elegíveis à inscrição na sequência.
+     * Só retorna leads com e-mail válido e não descadastrados. Aplica filtros
+     * opcionais: temperatura, fonte, responsável.
+     */
+    private function fetchMyLeadsCandidates(array $filters, $limit, $channel = 'email')
+    {
+        $sql = "SELECT c.id, c.contact_name, c.lead_email, c.phone
+                FROM whatsapp_contacts c
+                LEFT JOIN commercial_briefings b ON b.contact_id = c.id
+                WHERE COALESCE(c.is_group,0)=0
+                  AND " . $this->channelEligibilitySql($channel) . "
+                  AND COALESCE(c.unsubscribed,0)=0
+                  AND COALESCE(c.email_bounced,0)=0
+                  AND COALESCE(c.crm_archived,0)=0";
+        $params = [];
+
+        if (!empty($filters['temperature'])) { $sql .= " AND b.lead_temperature = ?"; $params[] = $filters['temperature']; }
+        if (!empty($filters['source']))      { $sql .= " AND b.lead_source = ?";      $params[] = $filters['source']; }
+        if (!empty($filters['assigned_to'])) { $sql .= " AND c.assigned_to = ?";       $params[] = (int)$filters['assigned_to']; }
+
+        $sql .= " ORDER BY c.last_message_at IS NULL, c.last_message_at DESC LIMIT " . (int)$limit;
+        return $this->db->fetchAll($sql, $params);
+    }
+
+    /**
+     * Busca leads específicos por ID (seleção manual), mantendo os mesmos critérios
+     * de elegibilidade (e-mail válido, não descadastrado, não bounce, não arquivado).
+     */
+    private function fetchMyLeadsByIds(array $ids, $channel = 'email', $manual = false)
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (empty($ids)) return [];
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "SELECT c.id, c.contact_name, c.lead_email, c.phone
+                FROM whatsapp_contacts c
+                WHERE c.id IN ($ph)
+                  AND COALESCE(c.is_group,0)=0
+                  AND " . $this->channelEligibilitySql($channel) . "
+                  AND COALESCE(c.email_bounced,0)=0";
+        // Disparo automático ignora descadastrados; manual inclui (reativa no enroll).
+        if (!$manual) $sql .= " AND COALESCE(c.unsubscribed,0)=0";
+        return $this->db->fetchAll($sql, $ids);
+    }
+
+    /**
+     * Cláusula SQL de elegibilidade por canal (sobre whatsapp_contacts c):
+     *   email    → precisa de e-mail
+     *   whatsapp → precisa de telefone
+     *   mixed    → e-mail OU telefone
+     */
+    private function channelEligibilitySql($channel)
+    {
+        $hasEmail = "(c.lead_email IS NOT NULL AND c.lead_email <> '')";
+        $hasPhone = "(c.phone IS NOT NULL AND c.phone <> '')";
+        if ($channel === 'whatsapp') return $hasPhone;
+        if ($channel === 'mixed') return "($hasEmail OR $hasPhone)";
+        return $hasEmail; // email (padrão)
+    }
+
+    /** Lê o canal (email/whatsapp/mixed) de uma sequência. */
+    private function sequenceChannel($sequenceId)
+    {
+        if (!$sequenceId) return 'email';
+        $r = $this->db->fetch("SELECT channel_type FROM email_sequences WHERE id = ?", [(int)$sequenceId]);
+        $ch = $r['channel_type'] ?? 'email';
+        return in_array($ch, ['email', 'whatsapp', 'mixed'], true) ? $ch : 'email';
+    }
+
+    /** Verifica se o grafo da sequência contém um bloco de reveal de telefone. */
+    private function sequenceHasPhoneReveal($sequenceId)
+    {
+        if (!$sequenceId) return false;
+        $r = $this->db->fetch("SELECT graph FROM email_sequences WHERE id = ?", [(int)$sequenceId]);
+        if (empty($r['graph'])) return false;
+        $graph = json_decode($r['graph'], true);
+        foreach ($graph['nodes'] ?? [] as $n) {
+            if (($n['type'] ?? '') === 'reveal_phone') {
+                // reveal_phone default revela telefone (a menos que explicitamente desligado)
+                $rp = $n['data']['reveal_phone'] ?? 1;
+                if (!empty($rp)) return true;
+            }
+        }
+        return false;
+    }
+
+    // ============ ICP + Score ============
+
+    /**
+     * Filtro ICP sobre os dados da busca (não gasta crédito).
+     * $icp: { seniorities:[], titles_any:[], employee_min, employee_max, countries:[], require_website:bool }
+     */
+    private function matchesIcp(array $person, array $icp)
+    {
+        if (empty($icp)) return true;
+        $org = $person['organization'] ?? [];
+
+        if (!empty($icp['seniorities'])) {
+            $sen = strtolower($person['seniority'] ?? '');
+            $ok = false;
+            foreach ($icp['seniorities'] as $s) if ($sen === strtolower($s)) { $ok = true; break; }
+            if (!$ok) return false;
+        }
+        if (!empty($icp['titles_any'])) {
+            $title = strtolower($person['title'] ?? '');
+            $ok = false;
+            foreach ($icp['titles_any'] as $t) if ($title !== '' && strpos($title, strtolower($t)) !== false) { $ok = true; break; }
+            if (!$ok) return false;
+        }
+        $emp = (int)($org['estimated_num_employees'] ?? 0);
+        if (!empty($icp['employee_min']) && $emp > 0 && $emp < (int)$icp['employee_min']) return false;
+        if (!empty($icp['employee_max']) && $emp > 0 && $emp > (int)$icp['employee_max']) return false;
+
+        if (!empty($icp['require_website']) && empty($org['website_url']) && empty($org['primary_domain'])) return false;
+
+        return true;
+    }
+
+    /**
+     * Lead Score sobre os dados da busca (configurável via icp_rules.score).
+     *
+     * Pesos padrão (rebalanceados para a fase de BUSCA, onde só há dados crus):
+     *   decisor +35, título-alvo +30, região +15, site +10, porte +10, tecnologia +0.
+     *
+     * Racional: seniority/título/região vêm quase sempre na People Search e são os
+     * sinais mais confiáveis, então concentram o peso. Porte (nº de funcionários)
+     * entra como bônus quando a busca o traz. Tecnologia praticamente nunca vem
+     * nesta fase (só no enrichment), por isso peso 0 — evita "matar" o score de
+     * bons leads. O total possível com dados confiáveis chega a ~100.
+     */
+    private function scoreProspect(array $person, array $icp)
+    {
+        $w = $icp['score'] ?? [];
+        $org = $person['organization'] ?? [];
+        $score = 0;
+
+        $sen = strtolower($person['seniority'] ?? '');
+        if (in_array($sen, ['owner', 'founder', 'c_suite', 'partner', 'vp', 'head', 'director'])) {
+            $score += (int)($w['decisor'] ?? 35);
+        }
+        if (!empty($icp['titles_any'])) {
+            $title = strtolower($person['title'] ?? '');
+            foreach ($icp['titles_any'] as $t) {
+                if ($title !== '' && strpos($title, strtolower($t)) !== false) { $score += (int)($w['title'] ?? 30); break; }
+            }
+        }
+        $emp = (int)($org['estimated_num_employees'] ?? 0);
+        if ($emp > 0 && (empty($icp['employee_min']) || $emp >= (int)$icp['employee_min'])
+            && (empty($icp['employee_max']) || $emp <= (int)$icp['employee_max'])) {
+            $score += (int)($w['size'] ?? 10);
+        }
+        if (!empty($person['country']) || !empty($org['country'])) $score += (int)($w['region'] ?? 15);
+        if (!empty($org['website_url']) || !empty($org['primary_domain'])) $score += (int)($w['website'] ?? 10);
+        if (!empty($org['technology_names'])) $score += (int)($w['technology'] ?? 0);
+
+        return $score;
+    }
+
+    // ============ Helpers ============
+
+    private function extractEmail(array $person)
+    {
+        $isReal = fn($e) => !empty($e) && stripos($e, 'email_not_unlocked') === false && stripos($e, 'domain.com') === false && filter_var($e, FILTER_VALIDATE_EMAIL);
+        if ($isReal($person['email'] ?? null)) return $person['email'];
+        foreach (['personal_emails', 'contact_emails'] as $k) {
+            if (!empty($person[$k]) && is_array($person[$k])) {
+                foreach ($person[$k] as $item) {
+                    $v = is_array($item) ? ($item['email'] ?? null) : $item;
+                    if ($isReal($v)) return $v;
+                }
+            }
+        }
+        return null;
+    }
+
+    private function capturedToday($campaignId)
+    {
+        $r = $this->db->fetch(
+            "SELECT COUNT(*) t FROM apollo_prospecting_log
+             WHERE campaign_id = ? AND action = 'enrolled' AND DATE(created_at) = CURDATE()",
+            [$campaignId]
+        );
+        return (int)($r['t'] ?? 0);
+    }
+
+    private function isWithinSchedule(array $camp)
+    {
+        // days_of_week: "1,2,3,4,5" (ISO-8601, 1=segunda). Vazio = todos os dias.
+        $days = trim((string)($camp['days_of_week'] ?? ''));
+        if ($days !== '') {
+            $allowed = array_map('intval', explode(',', $days));
+            if (!in_array((int)date('N'), $allowed, true)) return false;
+        }
+        $start = $camp['window_start'] ?: '08:00:00';
+        $end = $camp['window_end'] ?: '18:00:00';
+        $now = date('H:i:s');
+        return $now >= $start && $now <= $end;
+    }
+
+    private function recordCredit($campaignId, $localId, $type, $credits)
+    {
+        try {
+            $this->db->insert('apollo_prospecting_log', [
+                'campaign_id' => $campaignId,
+                'apollo_lead_id' => $localId,
+                'action' => 'reveal_' . $type,
+                'detail' => $credits . ' crédito(s)',
+                'credits' => $credits,
+            ]);
+        } catch (\Throwable $e) { /* silencioso */ }
+
+        // Debita a cota diária de créditos Apollo do dono da campanha.
+        try {
+            $ownerId = $this->campaignCreditOwnerId($campaignId);
+            if ($ownerId) (new ApolloCreditUsage())->consume($ownerId, (int) $credits);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /**
+     * Verifica se o dono da campanha ainda tem cota diária de créditos Apollo
+     * para gastar $cost. Sem dono resolvível, permite (não bloqueia a automação).
+     */
+    private function canSpendCredit(array $camp, $cost = 1): bool
+    {
+        $ownerId = !empty($camp['created_by']) ? (int) $camp['created_by'] : $this->superAdminId();
+        if (!$ownerId) return true;
+        $user = $this->db->fetch("SELECT id, apollo_daily_credits FROM users WHERE id = ?", [$ownerId]);
+        if (!$user) return true;
+        return (new ApolloCreditUsage())->check($user, (int) $cost)['allowed'];
+    }
+
+    /** ID do usuário cuja cota de créditos é debitada por uma campanha. */
+    private function campaignCreditOwnerId($campaignId)
+    {
+        if (!$campaignId) return $this->superAdminId();
+        $c = $this->db->fetch("SELECT created_by FROM apollo_campaigns WHERE id = ?", [$campaignId]);
+        $owner = !empty($c['created_by']) ? (int) $c['created_by'] : null;
+        return $owner ?: $this->superAdminId();
+    }
+
+    private function logCampaign($campaignId, $action, $detail = null)
+    {
+        try {
+            $this->db->insert('apollo_prospecting_log', [
+                'campaign_id' => $campaignId,
+                'action' => $action,
+                'detail' => $detail,
+            ]);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /** Log de importação do lead em Meus Leads (com vínculo ao contato). */
+    private function logImported($campaignId, $stagingId, $contactId, $detail = null)
+    {
+        try {
+            $this->db->insert('apollo_prospecting_log', [
+                'campaign_id' => $campaignId,
+                'apollo_lead_id' => $stagingId,
+                'contact_id' => $contactId,
+                'action' => 'imported',
+                'detail' => $detail,
+            ]);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /**
+     * Log de inscrição na sequência. É a métrica usada por capturedToday() e pelas
+     * estatísticas "captado" — grava contact_id para relatórios.
+     */
+    private function logEnrolled($campaignId, $contactId, $detail = null)
+    {
+        try {
+            $this->db->insert('apollo_prospecting_log', [
+                'campaign_id' => $campaignId,
+                'contact_id' => $contactId,
+                'action' => 'enrolled',
+                'detail' => $detail,
+            ]);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    /** Persiste os contadores de estado da última execução na própria campanha. */
+    private function saveCampaignStats($campaignId, array $m)
+    {
+        try {
+            $this->db->update('apollo_campaigns', [
+                'stat_analyzed'   => (int)($m['analyzed'] ?? 0),
+                'stat_discarded'  => (int)($m['out_of_icp'] ?? 0) + (int)($m['low_score'] ?? 0),
+                'stat_duplicated' => (int)($m['duplicated'] ?? 0),
+                'stat_revealed'   => (int)($m['revealed_email'] ?? 0),
+                'stat_imported'   => (int)($m['imported'] ?? 0),
+                'stat_enrolled'   => (int)($m['enrolled'] ?? 0),
+                'last_run_at'     => date('Y-m-d H:i:s'),
+                'last_error'      => $m['error'] ?? null,
+            ], 'id = ?', [$campaignId]);
+        } catch (\Throwable $e) { /* silencioso */ }
+    }
+
+    // ============ Lock ============
+    private function isLocked()
+    {
+        $r = $this->db->fetch("SELECT setting_value FROM settings WHERE setting_key = ?", [self::LOCK_KEY]);
+        if (!$r) return false;
+        $ts = strtotime($r['setting_value'] ?? '');
+        if (!$ts || (time() - $ts) > self::LOCK_TTL) { $this->unlock(); return false; }
+        return true;
+    }
+    private function lock()
+    {
+        $v = date('Y-m-d H:i:s');
+        $ex = $this->db->fetch("SELECT id FROM settings WHERE setting_key = ?", [self::LOCK_KEY]);
+        if ($ex) $this->db->update('settings', ['setting_value' => $v], 'setting_key = ?', [self::LOCK_KEY]);
+        else $this->db->insert('settings', ['setting_key' => self::LOCK_KEY, 'setting_value' => $v]);
+    }
+    private function unlock()
+    {
+        $this->db->query("DELETE FROM settings WHERE setting_key = ?", [self::LOCK_KEY]);
+    }
+}

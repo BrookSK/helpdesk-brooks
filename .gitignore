@@ -1,0 +1,58 @@
+# Uploads dos usuários
+public/uploads/tickets/*
+!public/uploads/tickets/.gitkeep
+
+# Gravações das videochamadas (arquivos grandes; não versionar)
+public/uploads/recordings/*
+!public/uploads/recordings/.gitkeep
+
+# Sessões de gravação v2 (journals + chunks brutos). Não versionar.
+storage/video-recordings/*
+!storage/video-recordings/.gitkeep
+
+# Configuração local do banco
+# config/database.php
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+*.lnk
+logs/app-error.log
+
+# Dependências / testes (PHPUnit)
+/vendor/
+.phpunit.cache/
+.phpunit.result.cache
+
+# Arquivos temporários de saída de comandos
+composer_out.txt
+pu_ver.txt
+phpunit_out.txt
+phpunit_result.txt
+setup_result.txt
+setup_out.txt
+tests/setup_test_db.log
+# Saídas de debug/lint/testes geradas na raiz (não versionar)
+*.out.txt
+*_result.txt
+perm_result.txt
+rdo_result.txt
+lintall.txt
+chk*.txt
+ping.txt
+tasks.txt
+wtest.txt
+
+# E2E (Playwright / Node)
+/node_modules/
+/package-lock.json
+e2e_result.txt
+tests-e2e/report/
+tests-e2e/.artifacts/
+test-results/
+playwright-report/
+csrf_result.txt

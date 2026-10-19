@@ -1,0 +1,1178 @@
+<?php
+
+/**
+ * Controller para executar tarefas agendadas via HTTP.
+ * Protegido por token (configurável em Settings como `cron_token`).
+ *
+ * Exemplos de uso:
+ *   GET /cron/syncAll?token=SEU_TOKEN
+ *
+ * Para configurar o cron no servidor (a cada 30 min):
+ *   [asterisco]/30 * * * * curl -s "https://seudominio.com/cron/syncAll?token=SEU_TOKEN" > /dev/null
+ *
+ * Ou via CLI (a cada 30 min):
+ *   [asterisco]/30 * * * * php /caminho/para/helpdeskON/cron_sync_all.php >> /var/log/helpdesk_sync.log 2>&1
+ */
+class CronController extends Controller
+{
+    public function __construct()
+    {
+        // Sem autenticação por sessão — valida por token
+    }
+
+    private function validateToken()
+    {
+        $token = $_GET['token'] ?? ($_POST['token'] ?? '');
+        $expected = Config::get('cron_token');
+        if ($expected && $token !== $expected) {
+            $this->json(['error' => 'Token inválido'], 403);
+        }
+        if (!$expected && empty($token)) {
+            // Se não há token configurado, aceita qualquer chamada (menos seguro)
+            return;
+        }
+    }
+
+    /**
+     * GET /cron/syncAll?token=XXX
+     * Executa sincronização completa: Buffer + Meta + LinkedIn + Snapshot.
+     */
+    public function syncAll()
+    {
+        $this->validateToken();
+        @set_time_limit(300);
+
+        $errors = [];
+        $stats = ['buffer_channels' => 0, 'buffer_posts' => 0, 'social_updated' => 0, 'snapshots' => 0];
+
+        // 1) Buffer sync
+        $bufferAccounts = new BufferAccount();
+        $bufferData = new BufferData();
+        $allAccounts = $bufferAccounts->all(true);
+
+        // Guard de cache: o ciclo Buffer é pesado (muitas requisições). Se já
+        // sincronizamos há menos de 6h, pulamos para não estourar a cota da API.
+        // (Aceita ?force=1 para forçar quando necessário.)
+        $bufferLastSync = Config::get('buffer_metrics_last_sync');
+        $forceBuffer = !empty($_GET['force']);
+        if (!$forceBuffer && $bufferLastSync && (time() - strtotime($bufferLastSync)) < 21600) {
+            $allAccounts = []; // pula o ciclo Buffer sem alterar o resto do sync
+            $stats['buffer_skipped'] = true;
+        }
+
+        $since = strtotime('-365 days');
+        $until = time();
+        $startIso = gmdate('Y-m-d\T00:00:00\Z', $since);
+        $endIso = gmdate('Y-m-d\T23:59:59\Z', $until);
+        $periodStart = date('Y-m-d', $since);
+        $periodEnd = date('Y-m-d', $until);
+
+        foreach ($allAccounts as $acc) {
+            try {
+                $api = new BufferApi($acc['api_key']);
+                $orgId = $acc['organization_id'] ?: $api->getFirstOrganizationId();
+                if (!$orgId) { $errors[] = 'Buffer: organização não encontrada'; continue; }
+
+                if ($acc['organization_id'] !== $orgId) {
+                    $bufferAccounts->update($acc['id'], ['organization_id' => $orgId]);
+                }
+
+                // Canais
+                $res = $api->getChannels($orgId);
+                // Cota da API esgotada (429): não adianta continuar — interrompe o ciclo Buffer.
+                if (($res['http'] ?? 0) === 429) { $errors[] = 'Buffer: cota da API atingida, sincronização interrompida.'; break; }
+                if (empty($res['errors'])) {
+                    $channels = $res['data']['channels'] ?? [];
+                    $bufferData->syncChannels($channels, $orgId, $acc['id']);
+                    $stats['buffer_channels'] += count($channels);
+                }
+
+                // Posts
+                $after = null; $pages = 0;
+                do {
+                    $res = $api->getSentPostsWithMetrics($orgId, [], 50, $after);
+                    if (($res['http'] ?? 0) === 429) { $errors[] = 'Buffer: cota da API atingida durante a busca de posts.'; break 2; }
+                    if (!empty($res['errors'])) break;
+                    $conn = $res['data']['posts'] ?? ['edges' => [], 'pageInfo' => []];
+                    foreach ($conn['edges'] as $edge) {
+                        $node = $edge['node'];
+                        $updatedAt = !empty($node['metricsUpdatedAt']) ? date('Y-m-d H:i:s', strtotime($node['metricsUpdatedAt'])) : null;
+                        $thumb = null;
+                        foreach (($node['assets'] ?? []) as $asset) {
+                            if (!empty($asset['thumbnail'])) { $thumb = $asset['thumbnail']; break; }
+                            if (!empty($asset['source'])) { $thumb = $asset['source']; break; }
+                        }
+                        $bufferData->savePost([
+                            'buffer_post_id' => $node['id'],
+                            'channel_id' => $node['channelId'],
+                            'service' => $node['channelService'] ?? null,
+                            'text' => $node['text'] ?? '',
+                            'status' => 'sent',
+                            'due_at' => !empty($node['dueAt']) ? date('Y-m-d H:i:s', strtotime($node['dueAt'])) : null,
+                            'sent_at' => !empty($node['sentAt']) ? date('Y-m-d H:i:s', strtotime($node['sentAt'])) : null,
+                            'external_link' => $node['externalLink'] ?? null,
+                            'thumbnail' => $thumb,
+                        ]);
+                        foreach (($node['metrics'] ?? []) as $metric) {
+                            $bufferData->saveMetric($node['id'], $metric, $updatedAt);
+                        }
+                        $stats['buffer_posts']++;
+                    }
+                    $after = $conn['pageInfo']['endCursor'] ?? null;
+                    $hasNext = !empty($conn['pageInfo']['hasNextPage']);
+                    $pages++;
+                } while ($hasNext && $pages < 3); // limita a ~150 posts recentes para economizar requisições
+
+                // Agregação por canal
+                $snapshotModel = new SocialSnapshot();
+                foreach ($bufferData->getChannelsByAccount($acc['id'], false) as $ch) {
+                    $res = $api->getAggregatedMetrics($orgId, $startIso, $endIso, [$ch['channel_id']]);
+                    if (!empty($res['errors'])) continue;
+                    $agg = $res['data']['aggregatedPostMetrics'] ?? null;
+                    if (!$agg) continue;
+                    $updatedAt = !empty($agg['metricsUpdatedAt']) ? date('Y-m-d H:i:s', strtotime($agg['metricsUpdatedAt'])) : null;
+                    $bufferData->clearChannelMetrics($ch['channel_id']);
+                    $byType = [];
+                    foreach (($agg['metrics'] ?? []) as $metric) {
+                        $bufferData->saveChannelMetric($ch['channel_id'], $metric, $periodStart, $periodEnd, $updatedAt);
+                        $byType[$metric['type']] = (float)($metric['value'] ?? 0);
+                    }
+                    $snapshotModel->save('buffer', strtolower($ch['service'] ?? ''), $ch['channel_id'], $ch['name'] ?? null, [
+                        'reach' => $byType['reach'] ?? null,
+                        'impressions' => $byType['impressions'] ?? null,
+                        'views' => $byType['views'] ?? null,
+                        'likes' => $byType['reactions'] ?? null,
+                        'comments' => $byType['comments'] ?? null,
+                        'shares' => $byType['shares'] ?? null,
+                        'saves' => $byType['saves'] ?? null,
+                        'posts_count' => isset($byType['postCount']) ? (int)$byType['postCount'] : null,
+                        'engagement_rate' => $byType['engagementRate'] ?? null,
+                        'extra_json' => json_encode($byType),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $errors[] = 'Buffer: ' . $e->getMessage();
+            }
+        }
+        // Marca a última sincronização Buffer só se o ciclo realmente rodou (guard de 6h acima).
+        if (!empty($allAccounts)) {
+            Config::set('buffer_metrics_last_sync', date('Y-m-d H:i:s'));
+        }
+
+        // 2) Social sync (Meta + LinkedIn)
+        $accountsModel = new SocialAccount();
+        $socialAccounts = $accountsModel->all(true);
+        $socialSince = strtotime('-30 days');
+        $socialUntil = time();
+
+        foreach ($socialAccounts as $acc) {
+            try {
+                if ($acc['provider'] === 'meta_instagram') {
+                    $api = $acc['access_token'] ? new MetaApi($acc['access_token']) : new MetaApi();
+                    if (!$api->hasToken()) { $errors[] = 'IG ' . ($acc['display_name'] ?: '') . ': sem token'; continue; }
+
+                    $info = $api->getInstagramAccount($acc['external_id']);
+                    if (!empty($info['error'])) { $errors[] = 'IG: ' . ($info['error']['message'] ?? 'erro'); continue; }
+
+                    $ins = MetaApi::sumInsights($api->getInstagramAccountInsights($acc['external_id'], $socialSince, $socialUntil));
+                    $media = $api->getInstagramMedia($acc['external_id'], 25);
+                    $totLikes = 0; $totComments = 0; $totShares = 0; $postCount = 0;
+                    foreach (($media['data'] ?? []) as $m) {
+                        $mi = MetaApi::flattenMediaInsights($api->getInstagramMediaInsights($m['id'], $m['media_type'] ?? 'IMAGE'));
+                        $likes = $m['like_count'] ?? ($mi['likes'] ?? 0);
+                        $comments = $m['comments_count'] ?? ($mi['comments'] ?? 0);
+                        $shares = $mi['shares'] ?? 0;
+                        $totLikes += $likes; $totComments += $comments; $totShares += $shares; $postCount++;
+
+                        $accountsModel->upsertPost('meta_instagram', $m['id'], [
+                            'account_id' => $acc['id'],
+                            'post_type' => $m['media_type'] ?? null,
+                            'caption' => $m['caption'] ?? null,
+                            'permalink' => $m['permalink'] ?? null,
+                            'thumbnail' => $m['thumbnail_url'] ?? ($m['media_url'] ?? null),
+                            'published_at' => !empty($m['timestamp']) ? date('Y-m-d H:i:s', strtotime($m['timestamp'])) : null,
+                            'likes' => $likes,
+                            'comments' => $comments,
+                            'shares' => $shares,
+                            'saved' => $mi['saved'] ?? null,
+                            'reach' => $mi['reach'] ?? null,
+                            'video_views' => $mi['views'] ?? null,
+                            'engagement' => $mi['total_interactions'] ?? ($likes + $comments + $shares),
+                            'extra_json' => json_encode($mi),
+                        ]);
+                    }
+
+                    $followers = $info['followers_count'] ?? $acc['followers'];
+                    $engRate = ($followers && $postCount) ? round((($totLikes + $totComments) / max(1, $postCount)) / $followers * 100, 2) : null;
+
+                    $accountsModel->saveMetrics($acc['id'], [
+                        'display_name' => $info['username'] ?? $acc['display_name'],
+                        'username' => $info['username'] ?? $acc['username'],
+                        'avatar' => $info['profile_picture_url'] ?? $acc['avatar'],
+                        'followers' => $followers,
+                        'follows' => $info['follows_count'] ?? $acc['follows'],
+                        'media_count' => $info['media_count'] ?? $acc['media_count'],
+                        'reach' => $ins['reach'] ?? null,
+                        'impressions' => $ins['impressions'] ?? null,
+                        'profile_views' => $ins['profile_views'] ?? null,
+                        'total_likes' => $totLikes,
+                        'total_comments' => $totComments,
+                        'total_shares' => $totShares,
+                        'engagement_rate' => $engRate,
+                    ]);
+                    $stats['social_updated']++;
+
+                } elseif ($acc['provider'] === 'facebook_page') {
+                    $api = $acc['access_token'] ? new MetaApi($acc['access_token']) : new MetaApi();
+                    if (!$api->hasToken()) { $errors[] = 'FB ' . ($acc['display_name'] ?: '') . ': sem token'; continue; }
+
+                    $info = $api->getFacebookPage($acc['external_id']);
+                    if (!empty($info['error'])) { $errors[] = 'FB: ' . ($info['error']['message'] ?? 'erro'); continue; }
+
+                    $posts = $api->getFacebookPosts($acc['external_id'], $acc['access_token'], 25);
+                    $totLikes = 0; $totComments = 0; $totShares = 0; $postCount = 0;
+                    foreach (($posts['data'] ?? []) as $p) {
+                        $likes = $p['reactions']['summary']['total_count'] ?? ($p['likes']['summary']['total_count'] ?? 0);
+                        $comments = $p['comments']['summary']['total_count'] ?? 0;
+                        $shares = $p['shares']['count'] ?? 0;
+                        $totLikes += $likes; $totComments += $comments; $totShares += $shares; $postCount++;
+                    }
+
+                    $pageInsights = $api->getFacebookPageInsights($acc['external_id'], $socialSince, $socialUntil, $acc['access_token']);
+                    $insData = MetaApi::sumInsights($pageInsights);
+                    $impressions = $insData['page_impressions'] ?? null;
+
+                    $fbFollowers = $info['followers_count'] ?? ($info['fan_count'] ?? $acc['followers']);
+                    $engRate = ($fbFollowers && $postCount) ? round((($totLikes + $totComments + $totShares) / max(1, $postCount)) / $fbFollowers * 100, 2) : null;
+
+                    $accountsModel->saveMetrics($acc['id'], [
+                        'display_name' => $info['name'] ?? $acc['display_name'],
+                        'avatar' => $info['picture']['data']['url'] ?? $acc['avatar'],
+                        'followers' => $fbFollowers,
+                        'total_likes' => $totLikes,
+                        'total_comments' => $totComments,
+                        'total_shares' => $totShares,
+                        'impressions' => $impressions,
+                        'engagement_rate' => $engRate,
+                    ]);
+                    $stats['social_updated']++;
+
+                } elseif ($acc['provider'] === 'linkedin_org') {
+                    $api = $acc['access_token'] ? new LinkedInApi($acc['access_token']) : new LinkedInApi();
+                    if (!$api->hasToken()) { $errors[] = 'LinkedIn ' . ($acc['display_name'] ?: '') . ': sem token'; continue; }
+
+                    $followers = $api->getFollowerCount($acc['external_id']);
+                    $orgStats = $api->getOrganizationShareStats($acc['external_id']);
+                    $totals = LinkedInApi::shareTotals($orgStats);
+                    $org = $api->getOrganization($acc['external_id']);
+
+                    $accountsModel->saveMetrics($acc['id'], [
+                        'display_name' => $org['localizedName'] ?? $acc['display_name'],
+                        'username' => $org['vanityName'] ?? $acc['username'],
+                        'avatar' => $org['logo_url'] ?? $acc['avatar'],
+                        'followers' => $followers,
+                        'impressions' => $totals['impressionCount'] ?? null,
+                        'total_likes' => $totals['likeCount'] ?? null,
+                        'total_comments' => $totals['commentCount'] ?? null,
+                        'total_shares' => $totals['shareCount'] ?? null,
+                        'engagement_rate' => isset($totals['engagement']) ? round($totals['engagement'] * 100, 2) : null,
+                    ]);
+                    $stats['social_updated']++;
+                }
+            } catch (\Throwable $e) {
+                $errors[] = ($acc['display_name'] ?: $acc['provider']) . ': ' . $e->getMessage();
+            }
+        }
+
+        // 3) Snapshot
+        $stats['snapshots'] = $accountsModel->snapshotAllFollowers();
+
+        // 4) Drena a fila de posts do Buffer (status 'queued').
+        // Roda sempre — mesmo que o ciclo Buffer acima tenha sido pulado pelo guard de 6h —
+        // porque a fila é onde caem os posts que falharam por rate limit e precisam ser reenviados.
+        try {
+            $queueResult = (new BufferController())->drainQueue(20);
+            $stats['buffer_queue_processed'] = $queueResult['processed'] ?? 0;
+        } catch (\Throwable $e) {
+            $errors[] = 'Buffer queue: ' . $e->getMessage();
+        }
+
+        $this->json([
+            'success' => true,
+            'stats' => $stats,
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
+     * GET /cron/captureLeads?token=XXX
+     * Coleta agendada de oportunidades (99Freelas). Respeita o intervalo configurado
+     * e o mesmo lock do botão manual (nunca duas coletas simultâneas).
+     */
+    public function captureLeads()
+    {
+        $this->validateToken();
+        @set_time_limit(360);
+
+        $model = new Opportunity();
+        $settings = $model->getSettings('freelas99');
+
+        if (empty($settings['enabled'])) {
+            $this->json(['skipped' => true, 'reason' => 'Fonte desabilitada']);
+        }
+
+        // Respeita o intervalo: só roda se passou schedule_minutes desde a última run
+        $health = $model->getHealth('freelas99');
+        $interval = max(15, (int) $settings['schedule_minutes']) * 60;
+        if (!empty($health['last_run_at'])) {
+            $elapsed = time() - strtotime($health['last_run_at']);
+            if ($elapsed < $interval) {
+                $this->json(['skipped' => true, 'reason' => 'Intervalo não atingido', 'next_in_seconds' => $interval - $elapsed]);
+            }
+        }
+
+        $runner = new CollectionRunner();
+        if ($runner->currentLock()) {
+            $this->json(['skipped' => true, 'reason' => 'Coleta já em andamento']);
+        }
+
+        $result = $runner->run('scheduled', null, 'scheduler');
+        $this->json(['success' => empty($result['error']), 'result' => $result]);
+    }
+
+    /**
+     * GET /cron/runSequences?token=XXX
+     * Worker das sequências de follow-up: processa participantes prontos (envio,
+     * espera, condições) e detecta respostas via IMAP para interromper follow-ups.
+     */
+    public function runSequences()
+    {
+        $this->validateToken();
+        @set_time_limit(300);
+
+        // 1) Detecta respostas recebidas (interrompe follow-ups) antes de disparar novos
+        $replies = $this->detectReplies();
+
+        // 2) Processa os participantes prontos
+        $engine = new SequenceEngine();
+        $stats = $engine->processDue(200);
+
+        // 3) RAG (Camada 3): indexa episódios recentes (mensagem→resposta→desfecho).
+        $ragIndexed = 0;
+        try { $ragIndexed = (new ProspectingRag())->indexPending(20); }
+        catch (\Throwable $e) { Logger::error('runSequences: rag', ['error' => $e->getMessage()]); }
+
+        // 4) Otimizador (Camada 2): a cada N respostas, gera sugestões de copy
+        //    (usa o RAG internamente para ancorar as sugestões em casos reais).
+        $optimizer = null;
+        try { $optimizer = (new ProspectingOptimizer())->runDue(); }
+        catch (\Throwable $e) { Logger::error('runSequences: otimizador', ['error' => $e->getMessage()]); }
+
+        $this->json(['success' => true, 'replies_detected' => $replies, 'engine' => $stats, 'rag_indexed' => $ragIndexed, 'optimizer' => $optimizer]);
+    }
+
+    /**
+     * Varre as contas IMAP em busca de respostas de leads que estão em sequência ativa,
+     * e registra a resposta (o que interrompe os follow-ups pendentes).
+     *
+     * Público para permitir REUTILIZAÇÃO pelo disparo manual da BETA
+     * (SequencesController::runNow) — é exatamente o mesmo passo do cron, sem cópia.
+     * @return int nº de respostas processadas
+     */
+    public function detectReplies()
+    {
+        $db = Database::getInstance();
+        $emailSvc = new EmailMessageService();
+        $processed = 0;
+
+        $accounts = $db->fetchAll("SELECT * FROM email_accounts WHERE is_active = 1 AND imap_host IS NOT NULL AND imap_host <> ''");
+        if (empty($accounts)) {
+            Logger::error('detectReplies: nenhuma conta com IMAP configurado');
+            return 0;
+        }
+
+        // Índice email→contact dos leads em sequência ativa (usado só no fallback
+        // legado, para envios antigos sem token). O caminho principal casa por token.
+        $byEmail = [];
+        foreach ($db->fetchAll(
+            "SELECT DISTINCT wc.id AS contact_id, LOWER(wc.lead_email) AS email
+             FROM sequence_participants sp
+             JOIN whatsapp_contacts wc ON sp.contact_id = wc.id
+             WHERE sp.status IN ('active','paused') AND wc.lead_email IS NOT NULL AND wc.lead_email <> ''"
+        ) as $r) {
+            $byEmail[$r['email']] = (int) $r['contact_id'];
+        }
+
+        // Descobre se o schema novo (cursor de UID) está disponível.
+        $hasCursor = false;
+        try {
+            $hasCursor = (bool) $db->fetch(
+                "SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_accounts' AND COLUMN_NAME = 'last_imap_uid'"
+            );
+        } catch (\Throwable $e) { $hasCursor = false; }
+
+        foreach ($accounts as $acc) {
+            try {
+                $reader = new ImapReader($acc);
+                if ($reader->connect() !== true) continue;
+
+                $cursor = $hasCursor ? (int) ($acc['last_imap_uid'] ?? 0) : 0;
+                $msgs = $reader->fetchRepliesSince($cursor, 80);
+                $maxUid = $cursor;
+
+                foreach ($msgs as $m) {
+                    $uid = (int) ($m['uid'] ?? 0);
+                    if ($uid > $maxUid) $maxUid = $uid;
+
+                    // Classifica por cabeçalho: ruído (auto-reply/bulk/bounce),
+                    // match (token casado com nosso envio) ou sem âncora.
+                    $verdict = EmailReplyRules::classify($m);
+
+                    if ($verdict['result'] === EmailReplyRules::NOISE) {
+                        continue; // ignora auto-resposta/bulk/bounce
+                    }
+
+                    if ($verdict['result'] === EmailReplyRules::MATCH && !empty($verdict['token'])) {
+                        // Resposta REAL casada por token. Puxa o snippet do corpo
+                        // e registra (dedupe por UID dentro do service).
+                        $m['snippet'] = $reader->fetchSnippet($uid, 600);
+                        if ($emailSvc->registerMatchedReply($m, $verdict['token'], (int) $acc['id'])) {
+                            $processed++;
+                        }
+                        continue;
+                    }
+
+                    // UNMATCHED: sem âncora nossa. Só considera como resposta se for
+                    // um lead em sequência ativa E não for ruído — fallback legado
+                    // para e-mails enviados ANTES do carimbo de token. Bem mais
+                    // restrito que o antigo (exige lead ativo + filtro de ruído).
+                    $fromEmail = strtolower(trim((string) ($m['from_email'] ?? '')));
+                    if ($fromEmail !== '' && isset($byEmail[$fromEmail])) {
+                        $contactId = $byEmail[$fromEmail];
+                        // Só se houver envio nosso anterior a esta mensagem (evita
+                        // tratar um e-mail espontâneo como "resposta").
+                        $lastSent = $db->fetch(
+                            "SELECT sent_at FROM email_messages WHERE contact_id = ? AND direction='outbound' AND sent_at IS NOT NULL ORDER BY sent_at DESC LIMIT 1",
+                            [$contactId]
+                        );
+                        $lastSentTs = $lastSent && $lastSent['sent_at'] ? strtotime($lastSent['sent_at']) : 0;
+                        $msgTs = !empty($m['date']) ? strtotime($m['date']) : 0;
+                        if ($lastSentTs > 0 && $msgTs >= $lastSentTs) {
+                            $emailSvc->registerReply($contactId, $m['subject'] ?? null);
+                            $processed++;
+                        }
+                    }
+                }
+
+                // Avança o cursor da conta para não reprocessar as mesmas mensagens.
+                if ($hasCursor && $maxUid > $cursor) {
+                    $db->update('email_accounts', ['last_imap_uid' => $maxUid], 'id = ?', [(int) $acc['id']]);
+                }
+
+                $reader->disconnect();
+            } catch (\Throwable $e) {
+                Logger::error('detectReplies', ['account' => $acc['id'] ?? null, 'error' => $e->getMessage()]);
+            }
+        }
+        return $processed;
+    }
+
+    /**
+     * GET /cron/runProspecting?token=XXX
+     * Automação de prospecção Apollo: Search → dedup → ICP → score → seleção →
+     * reveal de e-mail → cria Lead → Board → inscreve na sequência.
+     * Respeita janela/dias e meta diária de cada campanha (tabela apollo_campaigns).
+     */
+    public function runProspecting()
+    {
+        $this->validateToken();
+        @set_time_limit(300);
+
+        // 0) Detecta respostas por e-mail (IMAP) antes de tudo.
+        try { $this->detectReplies(); } catch (\Throwable $e) { Logger::error('runProspecting: detectReplies', ['error' => $e->getMessage()]); }
+
+        // 1) Captação Apollo (busca → reveal → cria lead → inscreve na sequência)
+        $service = new ApolloProspectingService();
+        $result = $service->runDue();
+
+        // 2) No MESMO tick, avança as sequências (envia e-mails/WhatsApp dos
+        //    participantes prontos). Assim um único agendamento de cron resolve
+        //    tanto a captação quanto o disparo dos follow-ups.
+        $engineStats = null;
+        try {
+            $engineStats = (new SequenceEngine())->processDue(200);
+        } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha ao processar sequências', ['error' => $e->getMessage()]);
+        }
+
+        // 3) Lembretes de reunião (X horas antes), conforme config de agendamento.
+        try { $this->sendBookingReminders(); } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha nos lembretes de reunião', ['error' => $e->getMessage()]);
+        }
+
+        // 4) Lembrete de 1h para reuniões agendadas no mesmo dia (antecedência de criação <= 24h).
+        try { $this->sendSameDayReminders(); } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha no lembrete de 1h (mesmo dia)', ['error' => $e->getMessage()]);
+        }
+
+        // 5) Lembrete de vencimento dos cards de Planejamento (prazo faltando <24h).
+        //    Pendurado aqui para reaproveitar um cron já agendado, sem exigir uma
+        //    tarefa nova no servidor. Idempotente via due_reminder_sent_at.
+        try { $this->sendCardDueReminders(); } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha no lembrete de vencimento de cards', ['error' => $e->getMessage()]);
+        }
+
+        // 6) Encerra gravações órfãs (gravador caiu sem finalizar). Pendurado aqui
+        //    para reaproveitar um cron já agendado, sem exigir tarefa nova no servidor.
+        try { (new VideocallController())->recoverOrphanRecordings(); } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha ao finalizar gravações órfãs', ['error' => $e->getMessage()]);
+        }
+
+        // 7) Régua de homologação (48h): 3 contatos (0h/24h/~42h) + liberação
+        //    automática para produção ao fim das 48h sem manifestação do cliente.
+        //    Pendurado aqui para reaproveitar um cron já agendado. Idempotente via
+        //    homolog_contactN_at / homolog_auto_released_at. Regra em HomologacaoRules.
+        try { $this->processHomologacaoRegua(); } catch (\Throwable $e) {
+            Logger::error('runProspecting: falha na régua de homologação (48h)', ['error' => $e->getMessage()]);
+        }
+
+        $this->json(['success' => empty($result['error']), 'result' => $result, 'sequences' => $engineStats]);
+    }
+
+    /**
+     * GET /cron/bookingReminders?token=XXX
+     * Envia lembrete (e-mail + WhatsApp) das reuniões que ocorrerão dentro da
+     * janela configurada (booking_notify_hours_before), uma única vez por reunião.
+     */
+    public function bookingReminders()
+    {
+        $this->validateToken();
+        @set_time_limit(120);
+        $sent = $this->sendBookingReminders();
+        $this->json(['success' => true, 'reminders_sent' => $sent]);
+    }
+
+    /**
+     * GET /cron/finalizeRecordings?token=XXX
+     * Encerra server-side as gravações cujo gravador caiu/saiu sem finalizar
+     * (arquivos .part sem novos pedaços há alguns minutos): promove o que já foi
+     * enviado a uma gravação normal. Antes isso só acontecia quando alguém abria a
+     * tela de gravações; agora um cron garante o encerramento mesmo que ninguém
+     * abra a lista. Idempotente e seguro (só mexe em .part parados).
+     */
+    public function finalizeRecordings()
+    {
+        $this->validateToken();
+        @set_time_limit(300);
+        $recovered = (new VideocallController())->recoverOrphanRecordings();
+        $this->json(['success' => true, 'recovered' => (int) $recovered]);
+    }
+
+    /** Dispara os lembretes das reuniões próximas. Retorna a quantidade enviada. */
+    private function sendBookingReminders()
+    {
+        $db = Database::getInstance();
+        $hours = max(0, (int)(Config::get('booking_notify_hours_before') ?? 24));
+        if ($hours <= 0) return 0;
+
+        // Reuniões futuras dentro da janela [agora, agora+hours] ainda não lembradas.
+        $limit = date('Y-m-d H:i:s', strtotime('+' . $hours . ' hours'));
+        $now = date('Y-m-d H:i:s');
+        $rows = $db->fetchAll(
+            "SELECT m.*, u.name AS owner_name, u.phone AS owner_phone, u.email AS owner_email,
+                    wc.contact_name AS crm_name, wc.phone AS crm_phone, wc.lead_email AS crm_email
+             FROM agenda_meetings m
+             LEFT JOIN users u ON m.assigned_to = u.id
+             LEFT JOIN whatsapp_contacts wc ON m.contact_id = wc.id
+             WHERE m.meeting_at IS NOT NULL
+               AND m.meeting_at BETWEEN ? AND ?
+               AND m.reminder_sent_at IS NULL
+               AND m.status NOT IN ('cancelada','realizada','convertida')",
+            [$now, $limit]
+        );
+
+        $sent = 0;
+        foreach ($rows as $m) {
+            $name = $m['crm_name'] ?: ($m['client_name'] ?: 'Cliente');
+            $email = $m['crm_email'] ?: ($m['client_email'] ?? null);
+            $phone = $m['crm_phone'] ?: ($m['client_phone'] ?? null);
+            $whenFmt = date('d/m/Y \à\s H:i', strtotime($m['meeting_at']));
+            $meetLink = $m['meet_link'] ?? null;
+
+            if (!empty($email)) {
+                $body = Mailer::template('Lembrete de reunião',
+                    "<p>Olá, <strong>" . htmlspecialchars($name) . "</strong>!</p>
+                     <p>Passando para lembrar da sua reunião:</p>
+                     <p style='margin:6px 0;'><strong>Assunto:</strong> " . htmlspecialchars($m['title']) . "</p>
+                     <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
+                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                     . "<p>Até logo!</p>");
+                try { if (Mailer::send($email, 'Lembrete de reunião — ' . $m['title'], $body)) $sent++; } catch (\Throwable $e) {}
+            }
+            if (!empty($phone)) {
+                $wa = "⏰ *Lembrete de reunião*\n\n*Assunto:* {$m['title']}\n*Data:* {$whenFmt}\n" . ($meetLink ? "*Link:* {$meetLink}\n" : "") . "\nAté logo!";
+                try { if (WhatsappNotifier::sendToPhone($phone, $wa, $name)) $sent++; } catch (\Throwable $e) {}
+            }
+            // Lembrete ao responsável também
+            if (!empty($m['owner_phone'])) {
+                $waO = "⏰ *Lembrete de reunião*\n\nCom {$name}\n*Data:* {$whenFmt}\n" . ($meetLink ? "*Meet:* {$meetLink}" : "");
+                try { WhatsappNotifier::sendToPhone($m['owner_phone'], $waO, $m['owner_name'] ?? ''); } catch (\Throwable $e) {}
+            }
+
+            try { $db->update('agenda_meetings', ['reminder_sent_at' => date('Y-m-d H:i:s')], 'id = ?', [$m['id']]); } catch (\Throwable $e) {}
+        }
+        return $sent;
+    }
+
+    /**
+     * Lembrete de 1 hora para reuniões agendadas "no mesmo dia" — isto é, cuja
+     * antecedência entre a criação e o horário da reunião é de até 24h.
+     * (Reuniões com mais de 24h de antecedência usam o lembrete de 5h, tratado à parte.)
+     *
+     * Regras:
+     *  - Só dispara quando falta 1h ou menos para a reunião (meeting_at entre agora e agora+1h).
+     *  - Se o horário de 1h antes já passou (reunião muito próxima), simplesmente não envia
+     *    (a janela [agora, agora+1h] naturalmente exclui reuniões que já começaram).
+     *  - Envia ao cliente, ao responsável e a toda a equipe (participantes internos).
+     *  - Uma única vez por reunião (controlado por reminder_sent_at).
+     */
+    private function sendSameDayReminders()
+    {
+        $db = Database::getInstance();
+
+        $now = date('Y-m-d H:i:s');
+        $oneHour = date('Y-m-d H:i:s', strtotime('+1 hour'));
+
+        // Reuniões que começam dentro da próxima 1h, ainda não lembradas, e cuja
+        // antecedência de criação (created_at → meeting_at) é de no máximo 24h.
+        $rows = $db->fetchAll(
+            "SELECT m.*, u.name AS owner_name, u.phone AS owner_phone, u.email AS owner_email,
+                    wc.contact_name AS crm_name, wc.phone AS crm_phone, wc.lead_email AS crm_email
+             FROM agenda_meetings m
+             LEFT JOIN users u ON m.assigned_to = u.id
+             LEFT JOIN whatsapp_contacts wc ON m.contact_id = wc.id
+             WHERE m.meeting_at IS NOT NULL
+               AND m.meeting_at BETWEEN ? AND ?
+               AND m.reminder_sent_at IS NULL
+               AND m.status NOT IN ('cancelada','realizada','convertida')
+               AND TIMESTAMPDIFF(SECOND, m.created_at, m.meeting_at) <= 86400",
+            [$now, $oneHour]
+        );
+
+        $sent = 0;
+        foreach ($rows as $m) {
+            $name = $m['crm_name'] ?: ($m['client_name'] ?: 'Cliente');
+            $email = $m['crm_email'] ?: ($m['client_email'] ?? null);
+            $phone = $m['crm_phone'] ?: ($m['client_phone'] ?? null);
+            $whenFmt = date('d/m/Y \à\s H:i', strtotime($m['meeting_at']));
+            $dateFmt = date('d/m/Y', strtotime($m['meeting_at']));
+            $timeFmt = date('H\hi', strtotime($m['meeting_at']));
+            $meetLink = $m['meet_link'] ?? null;
+
+            // --- Cliente (e-mail + WhatsApp) ---
+            if (!empty($email)) {
+                $body = Mailer::template('Lembrete de reunião',
+                    "<p>Olá, <strong>" . htmlspecialchars($name) . "</strong>!</p>
+                     <p>Sua reunião começa em 1 hora:</p>
+                     <p style='margin:6px 0;'><strong>Assunto:</strong> " . htmlspecialchars($m['title']) . "</p>
+                     <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
+                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                     . "<p>Até logo!</p>");
+                try { if (Mailer::send($email, 'Lembrete de reunião — ' . $m['title'], $body)) $sent++; } catch (\Throwable $e) {}
+            }
+            if (!empty($phone)) {
+                $wa = "⏰ *Lembrete de reunião*\n\n"
+                    . "Sua reunião *{$m['title']}* começa em 1 hora.\n\n"
+                    . "📅 *Data:* {$dateFmt}\n"
+                    . "🕐 *Horário:* {$timeFmt}"
+                    . ($meetLink ? "\n🔗 *Link da reunião:* {$meetLink}" : "");
+                try { if (WhatsappNotifier::sendToPhone($phone, $wa, $name)) $sent++; } catch (\Throwable $e) {}
+            }
+
+            // --- Responsável ---
+            if (!empty($m['owner_phone'])) {
+                $waO = "⏰ *Lembrete de reunião*\n\nCom {$name} — começa em 1 hora.\n"
+                    . "📅 *Data:* {$dateFmt}\n🕐 *Horário:* {$timeFmt}"
+                    . ($meetLink ? "\n🔗 *Link:* {$meetLink}" : "");
+                try { WhatsappNotifier::sendToPhone($m['owner_phone'], $waO, $m['owner_name'] ?? ''); } catch (\Throwable $e) {}
+            }
+
+            // --- Equipe (participantes internos): e-mail + WhatsApp ---
+            $participants = $db->fetchAll(
+                "SELECT u.name, u.email, u.phone
+                 FROM agenda_meeting_participants p
+                 JOIN users u ON p.user_id = u.id
+                 WHERE p.meeting_id = ?",
+                [$m['id']]
+            );
+            foreach ($participants as $p) {
+                if (!empty($p['email'])) {
+                    $bodyP = Mailer::template('Lembrete de reunião',
+                        "<p>Olá, <strong>" . htmlspecialchars($p['name']) . "</strong>!</p>
+                         <p>A reunião <strong>" . htmlspecialchars($m['title']) . "</strong> começa em 1 hora.</p>
+                         <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
+                         . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                         . "<p>Contamos com a sua participação.</p>");
+                    try { if (Mailer::send($p['email'], 'Lembrete de reunião — ' . $m['title'], $bodyP)) $sent++; } catch (\Throwable $e) {}
+                }
+                if (!empty($p['phone'])) {
+                    $waP = "⏰ *Lembrete de reunião*\n\n"
+                        . "Olá, equipe! 👋\n\n"
+                        . "A reunião *{$m['title']}* começa em 1 hora.\n\n"
+                        . "📅 *Data:* {$dateFmt}\n"
+                        . "🕐 *Horário:* {$timeFmt}"
+                        . ($meetLink ? "\n🔗 *Link da reunião:* {$meetLink}" : "")
+                        . "\n\nContamos com a participação de todos os envolvidos.";
+                    try { if (WhatsappNotifier::sendToPhone($p['phone'], $waP, $p['name'])) $sent++; } catch (\Throwable $e) {}
+                }
+            }
+
+            try { $db->update('agenda_meetings', ['reminder_sent_at' => date('Y-m-d H:i:s')], 'id = ?', [$m['id']]); } catch (\Throwable $e) {}
+        }
+        return $sent;
+    }
+
+    /**
+     * GET /cron/processBufferQueue?token=XXX
+     * Drena a fila de posts do Buffer em estado 'queued'.
+     *
+     * Esses posts só entram na fila quando o agendamento direto no Buffer falha
+     * (rate limit 429) e o fallback via Meta não está disponível. A UI promete
+     * publicação automática, mas até então o único drenador era um endpoint
+     * manual (buffer/processQueue). Este cron cumpre essa promessa.
+     */
+    public function processBufferQueue()
+    {
+        $this->validateToken();
+        @set_time_limit(300);
+
+        try {
+            $controller = new BufferController();
+            $result = $controller->drainQueue(20);
+            $this->json(array_merge(['success' => true], $result));
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /cron/cardDueReminders?token=XXX
+     *
+     * Lembrete de vencimento dos cards de Planejamento: para cada card cujo prazo
+     * (due_date) esteja faltando MENOS de 24h (janela [agora, agora+24h]), envia
+     * um WhatsApp ao responsável (assigned_to). Dispara UMA vez por prazo, usando
+     * planning_cards.due_reminder_sent_at como trava de idempotência.
+     *
+     * A janela em horas é configurável via setting `planning_due_notify_hours`
+     * (padrão 24). Cards sem responsável, sem telefone, já concluídos/negados/
+     * arquivados ou já lembrados são ignorados.
+     */
+    public function cardDueReminders()
+    {
+        $this->validateToken();
+        @set_time_limit(120);
+        $sent = $this->sendCardDueReminders();
+        $this->json(['success' => true, 'reminders_sent' => $sent]);
+    }
+
+    /** Dispara os lembretes de vencimento dos cards. Retorna a quantidade enviada. */
+    private function sendCardDueReminders()
+    {
+        $db = Database::getInstance();
+        $hours = (int) (Config::get('planning_due_notify_hours') ?? 24);
+        if ($hours <= 0) $hours = 24;
+
+        $now = date('Y-m-d H:i:s');
+        $limit = date('Y-m-d H:i:s', strtotime('+' . $hours . ' hours'));
+
+        // Cards com prazo dentro da janela, ainda ativos, não lembrados e com
+        // responsável que tenha telefone cadastrado.
+        $rows = $db->fetchAll(
+            "SELECT pc.id, pc.title, pc.due_date, pc.priority,
+                    u.name AS owner_name, u.phone AS owner_phone,
+                    co.name AS company_name
+             FROM planning_cards pc
+             JOIN users u ON pc.assigned_to = u.id
+             LEFT JOIN companies co ON pc.company_id = co.id
+             WHERE pc.due_date IS NOT NULL
+               AND pc.due_date > ?
+               AND pc.due_date <= ?
+               AND pc.due_reminder_sent_at IS NULL
+               AND pc.status NOT IN ('completed','denied','archived')
+               AND u.phone IS NOT NULL AND u.phone <> ''",
+            [$now, $limit]
+        );
+
+        $priorityLabels = ['low' => 'Baixa', 'medium' => 'Média', 'high' => 'Alta', 'urgent' => 'Urgente'];
+        $sent = 0;
+        foreach ($rows as $card) {
+            // Guarda extra: a decisão de fato vem da regra pura (testável).
+            if (!PlanningRules::shouldSendDueReminder($card['due_date'], 'open', null, $now, $hours)) {
+                continue;
+            }
+            $dueStr = date('d/m/Y \à\s H:i', strtotime($card['due_date']));
+            $priorityLabel = $priorityLabels[$card['priority']] ?? $card['priority'];
+            $cardLink = baseUrl('planning?card=' . $card['id']);
+
+            $msg = "⏰ *Prazo se aproximando*\n\n"
+                . "O card abaixo vence em menos de {$hours}h:\n\n"
+                . "*Card:* #{$card['id']} — {$card['title']}\n"
+                . "*Empresa:* " . ($card['company_name'] ?? 'N/A') . "\n"
+                . "*Prioridade:* {$priorityLabel}\n"
+                . "*Prazo:* {$dueStr}\n\n"
+                . "🔗 *Link do card:* {$cardLink}\n\n"
+                . "Não deixe a demanda vencer!";
+
+            $ok = false;
+            try {
+                $ok = WhatsappNotifier::sendToPhone($card['owner_phone'], $msg, $card['owner_name']);
+            } catch (\Throwable $e) {
+                $ok = false;
+            }
+
+            // Marca como lembrado mesmo se o WhatsApp falhar, para não reenviar em
+            // loop a cada execução do cron (canal complementar; o carimbo é zerado
+            // quando o due_date muda). Só conta como enviado quando confirmado.
+            try {
+                $db->update('planning_cards', ['due_reminder_sent_at' => date('Y-m-d H:i:s')], 'id = ?', [$card['id']]);
+            } catch (\Throwable $e) {}
+
+            if ($ok) $sent++;
+        }
+        return $sent;
+    }
+
+    /**
+     * GET /cron/homologacaoRegua?token=XXX
+     * Processa a régua de homologação de 48h (3 contatos + liberação). Idempotente.
+     */
+    public function homologacaoRegua()
+    {
+        $this->validateToken();
+        @set_time_limit(120);
+        $result = $this->processHomologacaoRegua();
+        $this->json(['success' => true, 'homologacao' => $result]);
+    }
+
+    /**
+     * Régua de homologação de 48 horas (demanda: fluxo de Nova Demanda).
+     *
+     * Para cada demanda EM HOMOLOGAÇÃO com janela em andamento, consulta a regra
+     * pura HomologacaoRules::nextAction (testável) e executa a ação devida:
+     *   - contact1 (0h):  entrega disponível para homologação;
+     *   - contact2 (24h): sem retorno, pedir validação + previsão;
+     *   - contact3 (~42h): publicação nas próximas 6h;
+     *   - release (48h):  libera automaticamente para produção (aprovado_producao).
+     *
+     * Idempotente: cada contato é carimbado (homolog_contactN_at) e só é enviado
+     * uma vez; a liberação carimba homolog_auto_released_at. Reaproveita o
+     * WhatsappNotifier/Mailer existentes. Nunca lança (best-effort).
+     *
+     * @return array estatísticas (contatos enviados, liberações)
+     */
+    private function processHomologacaoRegua(): array
+    {
+        $db = Database::getInstance();
+        $ticketModel = new Ticket();
+        $stats = ['contact1' => 0, 'contact2' => 0, 'contact3' => 0, 'released' => 0];
+
+        $rows = $ticketModel->getHomologacaoEmAndamento();
+        foreach ($rows as $t) {
+            try {
+                $startedAt = $t['homolog_started_at'];
+                $hours = HomologacaoRules::hoursElapsed($startedAt);
+                $sent = [
+                    'contact1' => !empty($t['homolog_contact1_at']),
+                    'contact2' => !empty($t['homolog_contact2_at']),
+                    'contact3' => !empty($t['homolog_contact3_at']),
+                    'released' => !empty($t['homolog_auto_released_at']),
+                ];
+                $action = HomologacaoRules::nextAction($hours, $sent);
+                if ($action === HomologacaoRules::ACTION_NONE) {
+                    continue;
+                }
+
+                if ($action === HomologacaoRules::ACTION_RELEASE) {
+                    // 48h sem manifestação: segue para produção automaticamente.
+                    $ticketModel->updateStatus((int)$t['id'], 'aprovado_producao');
+                    $ticketModel->update((int)$t['id'], ['homolog_auto_released_at' => date('Y-m-d H:i:s')]);
+                    (new PlanningCard())->syncFromTicket((int)$t['id'], 'aprovado_producao');
+                    $stats['released']++;
+                    continue;
+                }
+
+                // Contatos: monta e envia a mensagem (WhatsApp ao cliente, se houver).
+                $msg = HomologacaoRules::contactMessage($action, [
+                    'ticket_number' => $t['client_ticket_number'] ?? $t['id'],
+                    'title' => $t['title'] ?? '',
+                    'previsao' => !empty($t['previsao_publicacao']) ? date('d/m/Y', strtotime($t['previsao_publicacao'])) : '',
+                ]);
+                if (!empty($t['client_phone'])) {
+                    try { WhatsappNotifier::sendToPhone($t['client_phone'], $msg, $t['client_name'] ?? null); } catch (\Throwable $e) {}
+                }
+                if (!empty($t['client_email'])) {
+                    try { Mailer::send($t['client_email'], 'Homologação da sua demanda', Mailer::template('Homologação', '<p>' . htmlspecialchars($msg) . '</p>')); } catch (\Throwable $e) {}
+                }
+
+                // Carimba o contato correspondente (idempotência).
+                $col = ['contact1' => 'homolog_contact1_at', 'contact2' => 'homolog_contact2_at', 'contact3' => 'homolog_contact3_at'][$action];
+                $ticketModel->update((int)$t['id'], [$col => date('Y-m-d H:i:s')]);
+                $stats[$action]++;
+            } catch (\Throwable $e) {
+                Logger::error('processHomologacaoRegua', ['ticket' => $t['id'] ?? null, 'error' => $e->getMessage()]);
+            }
+        }
+        return $stats;
+    }
+
+    /**
+     * GET /cron/index
+     * Página de status/info sobre os crons disponíveis.
+     */
+    /**
+     * GET /cron/checkMissingReports?token=XXX
+     *
+     * Detecta profissionais da equipe interna que não preencheram o Relatório
+     * Diário na data de referência (ontem ou hoje, dependendo do horário limite
+     * configurado em rdo_deadline_time) e:
+     *   1. Cria pendência de revisão na tabela daily_report_reviews (tipo
+     *      'missing_report') para o admin tomar ciência.
+     *   2. Notifica o profissional via WhatsApp (se tiver telefone cadastrado).
+     *   3. Notifica via e-mail (se tiver e-mail cadastrado).
+     *
+     * Idempotente: a query filtra pela tabela daily_report_missing_notifications
+     * para não reenviar aviso para o mesmo usuário/data mais de uma vez.
+     *
+     * Sugestão de agendamento no servidor (1h após o deadline padrão de 19h):
+     *   0 20 * * * curl -s "https://seudominio.com/cron/checkMissingReports?token=TOKEN"
+     */
+    public function checkMissingReports()
+    {
+        $this->validateToken();
+        @set_time_limit(120);
+        $result = $this->doCheckMissingReports();
+        $this->json(['success' => true, 'checked' => $result['checked'], 'notified' => $result['notified']]);
+    }
+
+    /**
+     * Implementação do job de relatórios faltantes.
+     *
+     * Retorna ['checked' => int, 'notified' => int].
+     */
+    private function doCheckMissingReports(): array
+    {
+        $db = Database::getInstance();
+
+        // ── Data de referência ───────────────────────────────────────────────
+        // Se ainda não passou o horário limite de hoje → verifica ontem.
+        // Se já passou o horário limite de hoje → verifica hoje.
+        $deadline = RdoRules::getDeadline();
+        $today    = date('Y-m-d');
+        $nowTime  = date('H:i:s');
+        $refDate  = ($nowTime < $deadline) ? date('Y-m-d', strtotime('-1 day')) : $today;
+
+        // ── Quem deve ter relatório ──────────────────────────────────────────
+        // Todos os papéis com acesso ao módulo 'rdo', exceto 'client'.
+        $rdoRoles = Permissions::rolesForModule('rdo');
+        if (empty($rdoRoles)) {
+            return ['checked' => 0, 'notified' => 0];
+        }
+        $placeholders = implode(',', array_fill(0, count($rdoRoles), '?'));
+
+        // ── Filtra quem não preencheu E ainda não foi notificado ─────────────
+        $missing = $db->fetchAll(
+            "SELECT u.id, u.name, u.email, u.phone
+             FROM users u
+             WHERE u.role IN ({$placeholders})
+               AND (u.is_active IS NULL OR u.is_active = 1)
+               AND NOT EXISTS (
+                   SELECT 1 FROM daily_reports dr
+                   WHERE dr.user_id = u.id AND dr.report_date = ?
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM daily_report_missing_notifications mn
+                   WHERE mn.user_id = u.id AND mn.report_date = ?
+               )
+             ORDER BY u.name ASC",
+            array_merge($rdoRoles, [$refDate, $refDate])
+        );
+
+        if (empty($missing)) {
+            return ['checked' => 0, 'notified' => 0];
+        }
+
+        $notified = 0;
+        foreach ($missing as $user) {
+            $refBR = date('d/m/Y', strtotime($refDate));
+
+            // 1) Pendência de revisão para o admin ───────────────────────────
+            // Cria uma entrada em daily_report_reviews do tipo 'missing_report'.
+            // Como não há um report_id real, usamos um relatório-marcador ou
+            // simplesmente anotamos na tabela dedicada de notificações (abaixo).
+            // Por ora, registra só na tabela de notificações para não criar FK
+            // órfã em daily_report_reviews (que exige report_id NOT NULL).
+
+            // 2) Notificação WhatsApp ─────────────────────────────────────────
+            if (!empty($user['phone'])) {
+                $msg = "📋 *Relatório Diário não preenchido*\n\n"
+                     . "Olá, *{$user['name']}*! Identificamos que o seu Relatório Diário "
+                     . "de *{$refBR}* ainda não foi preenchido.\n\n"
+                     . "Por favor, acesse o Helpdesk e preencha o quanto antes. "
+                     . "Preenchimentos fora do prazo ficam sujeitos à revisão do administrador.";
+                try {
+                    WhatsappNotifier::sendToPhone($user['phone'], $msg, $user['name']);
+                } catch (\Throwable $e) {
+                    Logger::error('checkMissingReports: whatsapp', [
+                        'user_id' => $user['id'],
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // 3) Notificação por e-mail ───────────────────────────────────────
+            if (!empty($user['email'])) {
+                $body = Mailer::template(
+                    'Relatório Diário não preenchido',
+                    "<p>Olá, <strong>" . htmlspecialchars($user['name']) . "</strong>!</p>
+                     <p>Identificamos que o seu Relatório Diário de
+                     <strong>{$refBR}</strong> ainda não foi preenchido.</p>
+                     <p>Por favor, acesse o Helpdesk e preencha o quanto antes.
+                     Preenchimentos fora do prazo ficam sujeitos à revisão do administrador.</p>"
+                );
+                try {
+                    Mailer::send($user['email'], "Relatório Diário não preenchido — {$refBR}", $body);
+                } catch (\Throwable $e) {
+                    Logger::error('checkMissingReports: email', [
+                        'user_id' => $user['id'],
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // 4) Marca como notificado (idempotência) ─────────────────────────
+            try {
+                $db->insert('daily_report_missing_notifications', [
+                    'user_id'     => $user['id'],
+                    'report_date' => $refDate,
+                    'notified_at' => date('Y-m-d H:i:s'),
+                ]);
+            } catch (\Throwable $e) {
+                // Log silencioso — o mais importante (envio) já ocorreu.
+                Logger::error('checkMissingReports: insert mn', [
+                    'user_id' => $user['id'],
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+
+            $notified++;
+        }
+
+        return ['checked' => count($missing), 'notified' => $notified];
+    }
+
+    /**
+     * GET /cron/warrantyWarnings?token=XXX
+     *
+     * Avisa o cliente (e o gestor) quando a garantia de um projeto está a 15 dias
+     * ou menos do fim, oferecendo o contrato de suporte. Idempotente: carimba
+     * warranty_warn_sent_at para não reavisar o mesmo projeto.
+     *
+     * Sugestão de agendamento (diário de manhã):
+     *   0 9 * * * curl -s "https://seudominio.com/cron/warrantyWarnings?token=TOKEN"
+     */
+    public function warrantyWarnings()
+    {
+        $this->validateToken();
+        @set_time_limit(120);
+        $result = $this->doWarrantyWarnings();
+        $this->json(['success' => true, 'warned' => $result]);
+    }
+
+    /** Dispara os avisos de fim de garantia. Retorna a quantidade avisada. */
+    private function doWarrantyWarnings(): int
+    {
+        $projectModel = new Project();
+        $rows = $projectModel->getWarrantyEndingSoon(ProjectRules::WARRANTY_WARNING_DAYS);
+        if (empty($rows)) {
+            return 0;
+        }
+
+        $warned = 0;
+        foreach ($rows as $p) {
+            // Guarda extra: a decisão vem da regra pura (testável).
+            if (!ProjectRules::shouldWarnWarrantyEnding($p['warranty_ends_at'] ?? null)) {
+                continue;
+            }
+
+            $daysLeft = ProjectRules::warrantyDaysLeft($p['warranty_ends_at'] ?? null);
+            $endBR    = date('d/m/Y', strtotime($p['warranty_ends_at']));
+
+            // Contato principal do cliente (dono da empresa).
+            $contact = ['name' => null, 'phone' => null, 'email' => null];
+            if (!empty($p['company_id'])) {
+                $users = (new Company())->getUsers((int)$p['company_id']);
+                $owner = $users[0] ?? null;
+                if ($owner) {
+                    $contact['name']  = $owner['name']  ?? null;
+                    $contact['phone'] = $owner['phone'] ?? null;
+                    $contact['email'] = $owner['email'] ?? null;
+                }
+            }
+
+            $msg = "⚠️ *Fim da garantia se aproximando*\n\n"
+                 . "Olá" . (!empty($contact['name']) ? ", {$contact['name']}" : '') . "! A garantia do projeto "
+                 . "\"{$p['name']}\" termina em *{$daysLeft} dia(s)* ({$endBR}).\n\n"
+                 . "Para continuar com atendimento após esse prazo, consulte nosso contrato de suporte. "
+                 . "Estamos à disposição.";
+
+            if (!empty($contact['phone'])) {
+                try { WhatsappNotifier::sendToPhone($contact['phone'], $msg, $contact['name']); } catch (\Throwable $e) {
+                    Logger::error('warrantyWarnings: whatsapp', ['project' => $p['id'], 'error' => $e->getMessage()]);
+                }
+            }
+            if (!empty($contact['email'])) {
+                $body = Mailer::template('Fim da garantia se aproximando',
+                    "<p>Olá" . (!empty($contact['name']) ? ', <strong>' . htmlspecialchars($contact['name']) . '</strong>' : '') . "!</p>
+                     <p>A garantia do projeto <strong>" . htmlspecialchars($p['name']) . "</strong> termina em
+                     <strong>{$daysLeft} dia(s)</strong> ({$endBR}).</p>
+                     <p>Para manter o atendimento após esse prazo, consulte nosso contrato de suporte.</p>");
+                try { Mailer::send($contact['email'], 'Fim da garantia do seu projeto', $body); } catch (\Throwable $e) {
+                    Logger::error('warrantyWarnings: email', ['project' => $p['id'], 'error' => $e->getMessage()]);
+                }
+            }
+
+            // Aviso interno ao grupo da equipe (best-effort).
+            try {
+                WhatsappNotifier::sendToDefaultGroup(
+                    "⚠️ Garantia do projeto \"{$p['name']}\" (" . ($p['company_name'] ?? 'sem cliente') . ") "
+                    . "termina em {$daysLeft} dia(s) ({$endBR}). Ofereça o contrato de suporte."
+                );
+            } catch (\Throwable $e) {}
+
+            // Carimba (idempotência): não reavisa o mesmo projeto.
+            try { $projectModel->markWarrantyWarnSent((int)$p['id']); } catch (\Throwable $e) {}
+
+            $warned++;
+        }
+        return $warned;
+    }
+
+    public function index()
+    {
+        $this->json([
+            'endpoints' => [
+                'GET /cron/syncAll?token=XXX' => 'Sincronização completa (Buffer + Meta + LinkedIn + Snapshot)',
+                'GET /cron/processBufferQueue?token=XXX' => 'Drena a fila de posts do Buffer (status queued) — publica pendentes',
+                'GET /cron/captureLeads?token=XXX' => 'Coleta agendada de oportunidades (99Freelas)',
+                'GET /cron/runSequences?token=XXX' => 'Worker de follow-up: sequências + detecção de respostas',
+                'GET /cron/runProspecting?token=XXX' => 'Automação de prospecção Apollo (Search→reveal→CRM→sequência)',
+                'GET /cron/cardDueReminders?token=XXX' => 'Lembrete WhatsApp ao responsável de cards de Planejamento com prazo faltando <24h',
+                'GET /cron/checkMissingReports?token=XXX' => 'Verifica profissionais sem Relatório Diário e notifica via WhatsApp/e-mail',
+                'GET /cron/homologacaoRegua?token=XXX' => 'Régua de homologação (48h): 3 contatos + liberação automática para produção',
+                'GET /cron/warrantyWarnings?token=XXX' => 'Aviso 15 dias antes do fim da garantia do projeto (cliente + gestor)',
+            ],
+            'tip' => 'Configure cron_token em Configurações para proteger este endpoint.',
+        ]);
+    }
+}

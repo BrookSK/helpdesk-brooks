@@ -1,0 +1,102 @@
+<?php
+
+/**
+ * Configuração do banco de dados com detecção automática de ambiente.
+ *
+ * Regra final: branch "main" = PRODUÇÃO; qualquer outra branch = BETA.
+ * Ambiente LOCAL é detectado pelo host (localhost/127.0.0.1/.test/.local)
+ * e tem prioridade máxima.
+ *
+ * A definição do ambiente segue esta ordem de prioridade:
+ *   0) (prioridade absoluta) Ambiente de TESTE: quando APP_ENV=testing
+ *      (definido pelo bootstrap do PHPUnit), usa o banco helpdesk_on_test.
+ *   1) Host local: se o host for "localhost",
+ *      "127.0.0.1", "::1" ou terminar em ".test"/".local", assume LOCAL.
+ *   2) Domínio da requisição HTTP. Se o host contiver "plesk.page"
+ *      ou "beta", assume ambiente beta imediatamente.
+ *   3) (fallback) Leitura do arquivo <raiz>/.git/HEAD para descobrir
+ *      a branch atual (funciona sem o Git instalado, só leitura de texto).
+ *
+ * Default = "main" (assume produção em caso de dúvida).
+ */
+
+return (function () {
+    // Raiz do projeto: usa BASE_PATH quando disponível (bootstrap web/cron);
+    // caso contrário, deriva do próprio caminho deste arquivo (config/ -> raiz).
+    $rootPath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+
+    // ===== Camada 0 (prioridade absoluta): AMBIENTE DE TESTE =====
+    // O bootstrap do PHPUnit (tests/bootstrap.php) define APP_ENV=testing.
+    // Nunca deixamos os testes tocarem os bancos local/beta/produção.
+    $appEnv = getenv('APP_ENV');
+    if ($appEnv === false && defined('APP_ENV')) {
+        $appEnv = APP_ENV;
+    }
+    if ($appEnv === 'testing') {
+        return [
+            'host'     => '127.0.0.1',
+            'port'     => '3306',
+            'database' => 'helpdesk_on_test',
+            'username' => 'root',
+            'password' => '',
+        ];
+    }
+
+    $branch = 'main'; // default: assume produção
+
+    // Host da requisição (remove porta, se houver, e normaliza)
+    $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $hostName = strtolower(explode(':', $host)[0]);
+
+    // Camada 1 (prioridade máxima): detecção de ambiente LOCAL
+    $isLocal = in_array($hostName, ['localhost', '127.0.0.1', '::1'], true)
+        || str_ends_with($hostName, '.test')
+        || str_ends_with($hostName, '.local');
+
+    if ($isLocal) {
+        $branch = 'local';
+    } elseif (str_contains($host, 'plesk.page') || str_contains($host, 'beta')) {
+        // Camada 2: detecção pelo domínio (HTTP host)
+        $branch = 'beta';
+    } else {
+        // Camada 3 (fallback): leitura do arquivo .git/HEAD
+        $headFile = $rootPath . '/.git/HEAD';
+        if (file_exists($headFile)) {
+            $head = trim(file_get_contents($headFile));
+            if (str_starts_with($head, 'ref: refs/heads/')) {
+                $branch = substr($head, strlen('ref: refs/heads/'));
+            }
+        }
+    }
+
+    if ($branch === 'local') {
+        // ===== LOCAL / desenvolvimento =====
+        return [
+            'host'     => '127.0.0.1',
+            'port'     => '3306',
+            'database' => 'helpdesk_on',
+            'username' => 'root',
+            'password' => '',
+        ];
+    }
+
+    if ($branch === 'main') {
+        // ===== PRODUÇÃO =====
+        return [
+            'host'     => 'localhost',
+            'port'     => '3306',
+            'database' => 'helpdesk_on',
+            'username' => 'helpdesk_on',
+            'password' => 'd3boA94*ar?RnpWq',
+        ];
+    }
+
+    // ===== BETA / homologação (qualquer branch diferente de main) =====
+    return [
+        'host'     => 'localhost',
+        'port'     => '3306',
+        'database' => 'helpdesk_on_beta',
+        'username' => 'helpdesk_on_beta',
+        'password' => 'd3boA94*ar?RnpWq',
+    ];
+})();

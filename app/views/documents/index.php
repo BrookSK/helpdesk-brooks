@@ -1,0 +1,250 @@
+<?php $pageTitle = 'Documentos - ON Solutions Helpdesk'; $currentPage = 'documents'; ?>
+<?php require APP_PATH . '/views/layouts/header.php'; ?>
+<?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
+
+<div class="main-content">
+    <?php $isCompaniesMode = (($viewMode ?? 'documents') === 'companies'); ?>
+
+    <?php if (($viewMode ?? 'documents') === 'documents' && in_array($user['role'], ['super_admin', 'attendant'])): ?>
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0" style="font-size:0.85rem">
+            <li class="breadcrumb-item"><a href="<?= baseUrl('documents') ?>" class="text-decoration-none">Documentos</a></li>
+            <li class="breadcrumb-item active" aria-current="page"><?= escape($currentCompany['name'] ?? 'Documentos') ?></li>
+        </ol>
+    </nav>
+    <?php endif; ?>
+
+    <div class="top-bar">
+        <div>
+            <h5 class="mb-0"><?= $isCompaniesMode ? 'Documentos por Empresa' : 'Documentos' ?></h5>
+            <small class="text-muted">
+                <?php if ($isCompaniesMode): ?>
+                    Selecione uma empresa para ver os documentos
+                <?php elseif (!empty($currentCompany)): ?>
+                    <?= escape($currentCompany['name']) ?>
+                <?php else: ?>
+                    Documentos compartilhados
+                <?php endif; ?>
+            </small>
+        </div>
+        <div class="d-flex gap-2">
+            <?php if (($viewMode ?? 'documents') === 'documents' && in_array($user['role'], ['super_admin', 'attendant'])): ?>
+            <a href="<?= baseUrl('documents') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Empresas</a>
+            <?php endif; ?>
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                <i class="bi bi-upload"></i> Enviar Documento
+            </button>
+        </div>
+    </div>
+
+    <?php if ($msg = flash('success')): ?>
+        <div class="alert alert-success alert-dismissible fade show"><?= escape($msg) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    <?php endif; ?>
+    <?php if ($msg = flash('error')): ?>
+        <div class="alert alert-danger alert-dismissible fade show"><?= escape($msg) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    <?php endif; ?>
+
+    <?php if ($isCompaniesMode): ?>
+    <!-- Filtro de empresas -->
+    <div class="card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" id="filter-doc-company" class="form-control" placeholder="Filtrar empresa por nome...">
+            </div>
+        </div>
+    </div>
+    <!-- Listagem de empresas -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Empresa</th>
+                            <th>Documentos</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach (($companies ?? []) as $c): ?>
+                        <tr class="doc-company-row" data-search="<?= escape(mb_strtolower($c['name'])) ?>" style="cursor:pointer" onclick="window.location='<?= baseUrl('documents?company=' . $c['id']) ?>'">
+                            <td class="fw-medium"><i class="bi bi-building text-primary me-1"></i> <?= escape($c['name']) ?></td>
+                            <td><span class="badge bg-info text-dark"><?= $c['documents_count'] ?? 0 ?></span></td>
+                            <td onclick="event.stopPropagation()">
+                                <a href="<?= baseUrl('documents?company=' . $c['id']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr style="cursor:pointer" onclick="window.location='<?= baseUrl('documents?company=0') ?>'">
+                            <td class="fw-medium"><i class="bi bi-folder text-muted me-1"></i> Geral (sem empresa)</td>
+                            <td><span class="badge bg-secondary"><?= $generalCount ?? 0 ?></span></td>
+                            <td onclick="event.stopPropagation()">
+                                <a href="<?= baseUrl('documents?company=0') ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a>
+                            </td>
+                        </tr>
+                        <?php if (empty($companies)): ?>
+                        <tr><td colspan="3" class="text-center text-muted py-4">Nenhuma empresa cadastrada.</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+    (function() {
+        const input = document.getElementById('filter-doc-company');
+        const rows = document.querySelectorAll('.doc-company-row');
+        if (!input) return;
+        input.addEventListener('input', function() {
+            const term = this.value.trim().toLowerCase();
+            rows.forEach(function(row) {
+                const hay = row.getAttribute('data-search') || '';
+                row.style.display = (term === '' || hay.indexOf(term) !== -1) ? '' : 'none';
+            });
+        });
+    })();
+    </script>
+    <?php else: ?>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <?php if (!empty($documents)): ?>
+            <div class="table-responsive d-none d-md-block">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Documento</th>
+                            <th>Enviado por</th>
+                            <?php if (in_array($user['role'], ['super_admin', 'attendant'])): ?>
+                            <th>Empresa</th>
+                            <?php endif; ?>
+                            <th>Tamanho</th>
+                            <th>Data</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($documents as $doc): ?>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-file-earmark text-muted"></i>
+                                    <div>
+                                        <div class="fw-medium" style="font-size:0.85rem"><?= escape($doc['title']) ?></div>
+                                        <div class="text-muted" style="font-size:0.72rem"><?= escape($doc['file_name']) ?></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="font-size:0.85rem"><?= escape($doc['uploaded_by']) ?></td>
+                            <?php if (in_array($user['role'], ['super_admin', 'attendant'])): ?>
+                            <td style="font-size:0.85rem"><?= escape($doc['company_name'] ?? '-') ?></td>
+                            <?php endif; ?>
+                            <td style="font-size:0.85rem"><?= number_format(($doc['file_size'] ?? 0) / 1024, 0) ?> KB</td>
+                            <td style="font-size:0.85rem"><?= date('d/m/Y', strtotime($doc['created_at'])) ?></td>
+                            <td>
+                                <a href="<?= baseUrl($doc['file_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Download">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                <?php if ($doc['user_id'] == $user['id'] || $user['role'] === 'super_admin'): ?>
+                                <a href="<?= baseUrl('documents/delete/' . $doc['id']) ?>" class="btn btn-sm btn-outline-danger" title="Excluir" onclick="return confirm('Excluir este documento?')">
+                                    <i class="bi bi-trash"></i>
+                                </a>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Mobile -->
+            <div class="d-md-none p-3">
+                <?php foreach ($documents as $doc): ?>
+                <div class="border rounded-3 p-3 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-medium" style="font-size:0.85rem"><?= escape($doc['title']) ?></div>
+                            <div class="text-muted" style="font-size:0.72rem"><?= escape($doc['file_name']) ?></div>
+                            <div class="text-muted mt-1" style="font-size:0.72rem">
+                                Por <?= escape($doc['uploaded_by']) ?> · <?= timeAgo($doc['created_at']) ?>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <a href="<?= baseUrl($doc['file_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
+                            <?php if ($doc['user_id'] == $user['id'] || $user['role'] === 'super_admin'): ?>
+                            <a href="<?= baseUrl('documents/delete/' . $doc['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-folder2-open fs-2"></i>
+                <p class="mt-2 mb-0">Nenhum documento encontrado</p>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; // fim viewMode ?>
+</div>
+
+<!-- Modal Upload -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Enviar Documento</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="<?= baseUrl('documents/upload') ?>" method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-medium small">Título *</label>
+                        <input type="text" name="title" class="form-control form-control-sm" required placeholder="Ex: Contrato de serviço">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium small">Descrição</label>
+                        <input type="text" name="description" class="form-control form-control-sm" placeholder="Opcional">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium small">Arquivo *</label>
+                        <input type="file" name="document" class="form-control form-control-sm" required accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.sql,.rar,.7z">
+                        <small class="text-muted">Máx. 500MB. PDF, DOC, XLS, ZIP, SQL, imagens, etc.</small>
+                    </div>
+                    <?php if (in_array($user['role'], ['super_admin', 'attendant'])): ?>
+                    <?php $preselectCompany = (!empty($currentCompany) && !empty($currentCompany['id'])) ? (int)$currentCompany['id'] : null; ?>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium small">Empresa destino</label>
+                        <select name="company_id" class="form-select form-select-sm">
+                            <option value="">Geral (todas)</option>
+                            <?php
+                            $companiesForModal = (new Company())->getAll();
+                            foreach ($companiesForModal as $c): ?>
+                            <option value="<?= $c['id'] ?>" <?= $preselectCompany === (int)$c['id'] ? 'selected' : '' ?>><?= escape($c['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium small">Visibilidade</label>
+                        <select name="visibility" class="form-select form-select-sm">
+                            <option value="all">Todos</option>
+                            <option value="company">Apenas empresa selecionada</option>
+                            <option value="team">Apenas equipe interna</option>
+                        </select>
+                    </div>
+                    <?php else: ?>
+                    <input type="hidden" name="visibility" value="all">
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-upload"></i> Enviar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<?php require APP_PATH . '/views/layouts/footer.php'; ?>

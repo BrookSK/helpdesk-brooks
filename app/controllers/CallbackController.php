@@ -190,7 +190,7 @@ class CallbackController extends Controller
             . '.box{background:#fff;border-radius:16px;padding:40px;text-align:center;max-width:480px;box-shadow:0 4px 24px rgba(0,0,0,0.08);}'
             . '.icon{font-size:3rem;color:' . $color . ';margin-bottom:16px;}'
             . '.msg{font-size:1rem;color:#333;margin-bottom:24px;}'
-            . 'a{display:inline-block;padding:10px 24px;background:#00997D;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;}'
+            . 'a{display:inline-block;padding:10px 24px;background:#2c4a6e;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;}'
             . 'a:hover{background:#007d66;}</style></head><body>';
         echo '<div class="box"><div class="icon"><i class="bi ' . $icon . '"></i></div>';
         echo '<h2 style="font-size:1.3rem;margin-bottom:8px;">' . $title . '</h2>';

@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Performance Operacional - ON Solutions Helpdesk'; $currentPage = 'performance_operacional'; ?>
+<?php $pageTitle = 'Performance Operacional - Brooks Construtora Helpdesk'; $currentPage = 'performance_operacional'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 

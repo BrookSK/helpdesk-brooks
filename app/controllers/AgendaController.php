@@ -365,7 +365,7 @@ class AgendaController extends Controller
                      <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
                      . ($desc !== '' ? "<p style='margin:6px 0;'><strong>Descrição:</strong> " . nl2br(htmlspecialchars($desc)) . "</p>" : "")
                      . ($meetLink !== '' ? "<p style='text-align:center;margin:24px 0 8px;'>
-                            <a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
+                            <a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
                                 {$meetLabel}
                             </a></p>
                             <p style='font-size:0.8rem;color:#888;word-break:break-all;text-align:center;'>Link: {$meetLink}</p>" : "")
@@ -569,7 +569,7 @@ class AgendaController extends Controller
                      <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
                      . ($desc !== '' ? "<p style='margin:6px 0;'><strong>Descrição:</strong> " . nl2br(htmlspecialchars($desc)) . "</p>" : "")
                      . ($meetLink !== '' ? "<p style='text-align:center;margin:24px 0 8px;'>
-                            <a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
+                            <a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
                                 {$meetLabel}
                             </a></p>
                             <p style='font-size:0.8rem;color:#888;word-break:break-all;text-align:center;'>Link: {$meetLink}</p>" : "")
@@ -710,7 +710,7 @@ class AgendaController extends Controller
              <p style='margin:6px 0;'><strong>Cliente:</strong> " . htmlspecialchars($clientName) . "</p>
              <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
              . ($meetLink ? "<p style='text-align:center;margin:24px 0;'>
-                    <a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
+                    <a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
                         {$meetLabel}
                     </a></p>
                     <p style='font-size:0.8rem;color:#888;word-break:break-all;'>Link: {$meetLink}</p>" : "")
@@ -725,7 +725,7 @@ class AgendaController extends Controller
             $dateFmt = date('d/m/Y', strtotime($meetingAt));
             $timeFmt = date('H\hi', strtotime($meetingAt));
             $waMsg = "Olá, tudo bem?\n\n"
-                . "Eu sou a Carla e faço parte da equipe da ON Solutions.\n"
+                . "Eu sou a Carla e faço parte da equipe da Brooks Construtora.\n"
                 . "Estou entrando em contato para informar que sua reunião {$meeting['title']} está confirmada.\n\n"
                 . "Será um prazer contar com a sua presença.\n\n"
                 . "📅 Data: {$dateFmt}\n"

@@ -15,14 +15,14 @@
         .legal-header { text-align: center; margin-bottom: 40px; }
         .legal-header img { max-height: 45px; margin-bottom: 15px; }
         .legal-card { background: #fff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-        .legal-card h1 { font-size: 1.6rem; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }
+        .legal-card h1 { font-size: 1.6rem; font-weight: 700; color: #1a2332; margin-bottom: 8px; }
         .legal-card h2 { font-size: 1.1rem; font-weight: 600; color: #333; margin-top: 28px; margin-bottom: 12px; }
         .legal-card p, .legal-card li { font-size: 0.9rem; color: #555; line-height: 1.7; }
         .legal-card ul { padding-left: 20px; }
         .legal-card ul li { margin-bottom: 6px; }
         .legal-date { font-size: 0.8rem; color: #999; text-align: center; margin-top: 30px; }
         .legal-back { text-align: center; margin-top: 20px; }
-        .legal-back a { color: #00BFA6; text-decoration: none; font-weight: 500; font-size: 0.9rem; }
+        .legal-back a { color: #4a90d9; text-decoration: none; font-weight: 500; font-size: 0.9rem; }
         .legal-back a:hover { text-decoration: underline; }
     </style>
 </head>
@@ -30,11 +30,11 @@
 <div class="legal-container">
     <div class="legal-header">
         <?php if ($logoUrl): ?>
-        <div style="background:#1a1a2e;display:inline-block;padding:12px 20px;border-radius:10px;margin-bottom:10px;">
+        <div style="background:#1a2332;display:inline-block;padding:12px 20px;border-radius:10px;margin-bottom:10px;">
             <img src="<?= $base . $logoUrl ?>" alt="Logo">
         </div>
         <?php else: ?>
-        <h3 style="color:#00BFA6;font-weight:700;">ON Solutions</h3>
+        <h3 style="color:#4a90d9;font-weight:700;">Brooks Construtora</h3>
         <?php endif; ?>
     </div>
 
@@ -74,13 +74,13 @@
         </ul>
 
         <h2>5. Propriedade Intelectual</h2>
-        <p>Todo o conteúdo da Plataforma, incluindo design, código-fonte, marca, logotipos e funcionalidades, é de propriedade exclusiva da ON Solutions ou de seus licenciantes, protegido pela legislação de propriedade intelectual.</p>
+        <p>Todo o conteúdo da Plataforma, incluindo design, código-fonte, marca, logotipos e funcionalidades, é de propriedade exclusiva da Brooks Construtora ou de seus licenciantes, protegido pela legislação de propriedade intelectual.</p>
 
         <h2>6. Disponibilidade do Serviço</h2>
         <p>Empreendemos esforços para manter a Plataforma disponível de forma contínua, porém não garantimos disponibilidade ininterrupta. Manutenções programadas ou emergenciais podem causar indisponibilidade temporária, sem que isso gere direito a indenização.</p>
 
         <h2>7. Limitação de Responsabilidade</h2>
-        <p>A ON Solutions não se responsabiliza por:</p>
+        <p>A Brooks Construtora não se responsabiliza por:</p>
         <ul>
             <li>Danos decorrentes de uso inadequado da Plataforma pelo usuário;</li>
             <li>Perdas resultantes de falhas de conexão à internet;</li>
@@ -101,7 +101,7 @@
         <p>Para dúvidas sobre estes Termos de Uso, entre em contato através do email disponível nas configurações do sistema ou pelo canal de suporte da Plataforma.</p>
 
         <div class="legal-date">
-            <p>ON Solutions Tecnologia LTDA<br>CNPJ: Informação disponível sob solicitação</p>
+            <p>Brooks Construtora Tecnologia LTDA<br>CNPJ: Informação disponível sob solicitação</p>
         </div>
     </div>
 

@@ -20,7 +20,7 @@ $brl = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
             background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(94,234,212,.14), transparent 70%), linear-gradient(170deg, #07141b 0%, #0b1f27 45%, #0e3d38 100%); }
         .wrap { max-width:560px; margin:0 auto; padding:48px 20px; }
         .brand { display:flex; align-items:center; gap:12px; margin-bottom:36px; }
-        .brand img { width:44px; filter:drop-shadow(0 0 16px rgba(0,191,166,.45)); }
+        .brand img { width:44px; filter:drop-shadow(0 0 16px rgba(74,144,217,.45)); }
         .brand strong { font-size:1.05rem; }
         .pill { display:inline-block; padding:6px 12px; border:1px solid rgba(94,234,212,.35); border-radius:999px; color:#5eead4; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; }
         h1 { font-size:1.9rem; line-height:1.15; margin:14px 0 6px; letter-spacing:-.02em; }
@@ -30,17 +30,17 @@ $brl = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
         .row b { color:#fff; }
         .btn { display:inline-block; border:none; border-radius:10px; padding:13px 18px; font-size:.95rem; font-weight:700; cursor:pointer; text-decoration:none; font-family:inherit; }
         .btn-pdf { background:#fff; color:#07141b; width:100%; text-align:center; }
-        .btn-ok { background:#00bfa6; color:#fff; }
+        .btn-ok { background:#4a90d9; color:#fff; }
         .btn-no { background:transparent; color:#ffb4ad; border:1px solid #ffb4ad; }
         .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
         .banner { padding:14px; border-radius:10px; margin-bottom:16px; }
-        .banner.ok { background:rgba(0,191,166,.18); color:#a7f3e4; }
+        .banner.ok { background:rgba(74,144,217,.18); color:#a7f3e4; }
         .banner.no { background:rgba(255,120,110,.15); color:#ffc8c2; }
         .done { display:flex; gap:14px; align-items:flex-start; padding:18px; border-radius:14px; margin-bottom:16px; }
-        .done.ok { background:rgba(0,191,166,.16); border:1px solid rgba(94,234,212,.45); }
+        .done.ok { background:rgba(74,144,217,.16); border:1px solid rgba(94,234,212,.45); }
         .done.no { background:rgba(255,120,110,.12); border:1px solid rgba(255,180,173,.4); }
         .done .ic { flex:0 0 40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.3rem; font-weight:800; }
-        .done.ok .ic { background:#00bfa6; color:#07141b; }
+        .done.ok .ic { background:#4a90d9; color:#07141b; }
         .done.no .ic { background:#ffb4ad; color:#07141b; }
         .done strong { display:block; font-size:1.05rem; margin-bottom:4px; }
         .done p { margin:0; color:#d5e4e6; font-size:.92rem; line-height:1.45; }

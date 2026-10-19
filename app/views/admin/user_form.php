@@ -1,4 +1,4 @@
-<?php $pageTitle = ($editUser ? 'Editar' : 'Novo') . ' Usuário - ON Solutions Helpdesk'; $currentPage = 'users'; ?>
+<?php $pageTitle = ($editUser ? 'Editar' : 'Novo') . ' Usuário - Brooks Construtora Helpdesk'; $currentPage = 'users'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -329,7 +329,7 @@
                     <div class="card-body">
                         <p class="small text-muted mb-2">Selecione quais empresas este usuário pode visualizar nos módulos de Planejamento, Demandas e CRM. Se nenhuma for selecionada, ele só verá cards sem empresa.</p>
 
-                        <div class="form-check mb-3 p-2 rounded d-flex align-items-center gap-2" style="background:#e0f7f4;margin-left:0;padding-left:0.75rem !important;">
+                        <div class="form-check mb-3 p-2 rounded d-flex align-items-center gap-2" style="background:#eaf2fb;margin-left:0;padding-left:0.75rem !important;">
                             <input class="form-check-input mt-0 ms-0" type="checkbox" name="see_all_companies" value="1" id="seeAllCompanies" <?= !empty($editUser['see_all_companies']) ? 'checked' : '' ?> onchange="toggleSeeAll()" style="float:none;">
                             <label class="form-check-label small fw-medium mb-0" for="seeAllCompanies">
                                 Sempre ver todas as empresas (inclusive as futuras)

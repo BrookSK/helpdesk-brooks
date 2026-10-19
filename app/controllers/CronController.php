@@ -606,7 +606,7 @@ class CronController extends Controller
                      <p>Passando para lembrar da sua reunião:</p>
                      <p style='margin:6px 0;'><strong>Assunto:</strong> " . htmlspecialchars($m['title']) . "</p>
                      <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
-                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
                      . "<p>Até logo!</p>");
                 try { if (Mailer::send($email, 'Lembrete de reunião — ' . $m['title'], $body)) $sent++; } catch (\Throwable $e) {}
             }
@@ -677,7 +677,7 @@ class CronController extends Controller
                      <p>Sua reunião começa em 1 hora:</p>
                      <p style='margin:6px 0;'><strong>Assunto:</strong> " . htmlspecialchars($m['title']) . "</p>
                      <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
-                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                     . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
                      . "<p>Até logo!</p>");
                 try { if (Mailer::send($email, 'Lembrete de reunião — ' . $m['title'], $body)) $sent++; } catch (\Throwable $e) {}
             }
@@ -712,7 +712,7 @@ class CronController extends Controller
                         "<p>Olá, <strong>" . htmlspecialchars($p['name']) . "</strong>!</p>
                          <p>A reunião <strong>" . htmlspecialchars($m['title']) . "</strong> começa em 1 hora.</p>
                          <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
-                         . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
+                         . ($meetLink ? "<p style='text-align:center;margin:24px 0;'><a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Entrar na reunião</a></p>" : "")
                          . "<p>Contamos com a sua participação.</p>");
                     try { if (Mailer::send($p['email'], 'Lembrete de reunião — ' . $m['title'], $bodyP)) $sent++; } catch (\Throwable $e) {}
                 }

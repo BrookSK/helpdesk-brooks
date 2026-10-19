@@ -19,7 +19,7 @@
                 </div>
                 <div class="mb-2">
                     <label class="form-label small fw-medium">Nome (opcional)</label>
-                    <input type="text" id="li-name" class="form-control form-control-sm" placeholder="Ex: ON Solutions Brasil">
+                    <input type="text" id="li-name" class="form-control form-control-sm" placeholder="Ex: Brooks Construtora Brasil">
                 </div>
                 <div class="mb-2">
                     <label class="form-label small fw-medium">Access Token (opcional)</label>

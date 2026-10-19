@@ -44,35 +44,35 @@
 <style>
 .nv-call-win { position:fixed; top:90px; right:24px; width:300px; background:#fff; border-radius:16px;
     box-shadow:0 12px 45px rgba(0,0,0,0.28); z-index:11000; overflow:hidden; }
-.nv-call-head { display:flex; align-items:center; gap:8px; padding:10px 14px; background:#00BFA6; color:#fff; font-weight:600; cursor:move; user-select:none; font-size:0.9rem; }
+.nv-call-head { display:flex; align-items:center; gap:8px; padding:10px 14px; background:#4a90d9; color:#fff; font-weight:600; cursor:move; user-select:none; font-size:0.9rem; }
 .nv-call-head .nv-head-btn { margin-left:auto; background:transparent; border:0; color:#fff; cursor:pointer; font-size:0.9rem; }
 .nv-reg-dot { width:9px; height:9px; border-radius:50%; background:#ffd54f; }
 .nv-reg-dot.online { background:#b9f6ca; } .nv-reg-dot.offline { background:#ff8a80; }
 .nv-call-body { padding:18px 18px 14px; text-align:center; }
-.nv-call-avatar { width:64px; height:64px; border-radius:50%; background:#e6faf6; color:#00997D; display:flex; align-items:center; justify-content:center; font-size:1.8rem; margin:0 auto 10px; }
+.nv-call-avatar { width:64px; height:64px; border-radius:50%; background:#e6faf6; color:#2c4a6e; display:flex; align-items:center; justify-content:center; font-size:1.8rem; margin:0 auto 10px; }
 .nv-call-peer { font-size:1.1rem; font-weight:700; color:#222; margin-bottom:2px; word-break:break-word; }
 .nv-call-sub { font-size:0.8rem; color:#888; margin-bottom:6px; }
 .nv-call-status { color:#666; font-size:0.88rem; margin-bottom:6px; display:flex; align-items:center; justify-content:center; gap:8px; }
-.nv-call-timer { font-variant-numeric:tabular-nums; font-weight:700; font-size:1.3rem; color:#00997D; margin-bottom:8px; }
+.nv-call-timer { font-variant-numeric:tabular-nums; font-weight:700; font-size:1.3rem; color:#2c4a6e; margin-bottom:8px; }
 .nv-call-actions { display:flex; align-items:center; justify-content:center; gap:14px; margin:10px 0; }
 .nv-btn { width:52px; height:52px; border-radius:50%; border:0; color:#fff; font-size:1.2rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform .12s, filter .12s; }
 .nv-btn:hover { filter:brightness(1.08); transform:translateY(-1px); }
 .nv-btn-answer { background:#22c55e; } .nv-btn-mute { background:#6b7280; } .nv-btn-mute.muted { background:#f59e0b; } .nv-btn-hangup { background:#ef4444; }
 .nv-call-warn { margin:8px 0; color:#b91c1c; font-size:0.8rem; }
 .nv-call-dots { display:inline-flex; gap:3px; }
-.nv-call-dots span { width:6px; height:6px; border-radius:50%; background:#00BFA6; animation:nvdot 1s infinite ease-in-out; }
+.nv-call-dots span { width:6px; height:6px; border-radius:50%; background:#4a90d9; animation:nvdot 1s infinite ease-in-out; }
 .nv-call-dots span:nth-child(2){ animation-delay:.15s; } .nv-call-dots span:nth-child(3){ animation-delay:.3s; }
 @keyframes nvdot { 0%,80%,100%{ opacity:.3; transform:scale(.8);} 40%{ opacity:1; transform:scale(1);} }
 .nv-notes-wrap { text-align:left; border-top:1px solid #eef0f2; padding-top:10px; margin-top:6px; }
 .nv-notes-label { font-size:0.75rem; font-weight:600; color:#555; display:block; margin-bottom:4px; }
 .nv-notes { width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; font-size:0.8rem; resize:vertical; outline:none; }
-.nv-notes:focus { border-color:#00BFA6; box-shadow:0 0 0 3px rgba(0,191,166,0.12); }
+.nv-notes:focus { border-color:#4a90d9; box-shadow:0 0 0 3px rgba(74,144,217,0.12); }
 .nv-notes-actions { display:flex; gap:8px; margin-top:6px; }
 .nv-mini-btn { flex:1; border:1px solid #e5e7eb; background:#fff; border-radius:8px; padding:6px 8px; font-size:0.75rem; font-weight:500; color:#555; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:5px; }
 .nv-mini-btn:hover { background:#f7f9fa; }
-.nv-mini-primary { background:#00BFA6; border-color:#00BFA6; color:#fff; }
-.nv-mini-primary:hover { filter:brightness(1.05); background:#00BFA6; }
-.nv-note-saved { color:#00997D; font-size:0.75rem; margin-top:5px; text-align:center; }
+.nv-mini-primary { background:#4a90d9; border-color:#4a90d9; color:#fff; }
+.nv-mini-primary:hover { filter:brightness(1.05); background:#4a90d9; }
+.nv-note-saved { color:#2c4a6e; font-size:0.75rem; margin-top:5px; text-align:center; }
 </style>
 
 <script type="module">

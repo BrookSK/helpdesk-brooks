@@ -33,7 +33,7 @@ $minutesJson = json_encode($minutesDecoded, JSON_UNESCAPED_UNICODE | JSON_UNESCA
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        :root { --brand:#00BFA6; --brand-dark:#009e88; --bg:#0f1020; --panel:#1a1c2e; --panel2:#23263d; }
+        :root { --brand:#4a90d9; --brand-dark:#2c4a6e; --bg:#0f1020; --panel:#1a1c2e; --panel2:#23263d; }
         * { box-sizing:border-box; }
         body { margin:0; background:var(--bg); color:#e8eaf1; font-family:'Segoe UI',system-ui,Arial,sans-serif; }
         .top { display:flex; align-items:center; gap:12px; padding:12px 18px; background:rgba(0,0,0,.25); }
@@ -56,7 +56,7 @@ $minutesJson = json_encode($minutesDecoded, JSON_UNESCAPED_UNICODE | JSON_UNESCA
         .tab-body { flex:1; overflow:auto; padding:14px; }
         .seg { padding:7px 9px; border-radius:8px; cursor:pointer; display:flex; gap:9px; font-size:.86rem; line-height:1.4; }
         .seg:hover { background:var(--panel2); }
-        .seg.active { background:rgba(0,191,166,.16); }
+        .seg.active { background:rgba(74,144,217,.16); }
         .seg .t { color:var(--brand); font-variant-numeric:tabular-nums; flex:0 0 auto; font-size:.78rem; padding-top:1px; }
         .summary-body { white-space:pre-wrap; font-size:.88rem; line-height:1.6; }
         .muted { color:#9aa2c0; }
@@ -313,7 +313,7 @@ function exportMinutePdf() {
     const sec = (label, items, color) => {
         if (!items || !items.length) return '';
         return `<div style="margin-bottom:18px;">
-            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color || '#00BFA6'};margin-bottom:6px;">${label}</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color || '#4a90d9'};margin-bottom:6px;">${label}</div>
             <ul style="margin:0;padding-left:18px;">${items.map(i => `<li style="margin-bottom:4px;font-size:13px;">${i}</li>`).join('')}</ul>
         </div>`;
     };
@@ -321,7 +321,7 @@ function exportMinutePdf() {
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
     <title>Minuta — ${title}</title>
     <style>
-        body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a2e; padding:32px 40px; max-width:780px; margin:0 auto; }
+        body { font-family:'Segoe UI',Arial,sans-serif; color:#1a2332; padding:32px 40px; max-width:780px; margin:0 auto; }
         h1 { font-size:20px; margin:0 0 4px; }
         .meta { font-size:12px; color:#666; margin-bottom:24px; }
         .resumo { font-size:13px; line-height:1.7; color:#333; background:#f5f5f5; padding:14px 16px; border-radius:8px; margin-bottom:20px; }

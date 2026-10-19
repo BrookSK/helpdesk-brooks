@@ -87,14 +87,14 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 -- Inserir configurações padrão
 INSERT INTO settings (setting_key, setting_value) VALUES
-('app_name', 'ON Solutions Helpdesk'),
+('app_name', 'Brooks Construtora Helpdesk'),
 ('app_email', 'contato@onsolutions.com.br'),
 ('smtp_host', ''),
 ('smtp_port', '587'),
 ('smtp_username', ''),
 ('smtp_password', ''),
 ('smtp_encryption', 'tls'),
-('smtp_from_name', 'ON Solutions Helpdesk'),
+('smtp_from_name', 'Brooks Construtora Helpdesk'),
 ('smtp_from_email', ''),
 ('openai_api_key', ''),
 ('webhook_url', ''),

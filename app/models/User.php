@@ -342,7 +342,7 @@ class User
             "<p>Olá, <strong>" . htmlspecialchars($user['name']) . "</strong>!</p>
             <p>Seu acesso ao sistema de Helpdesk foi criado. Para começar, defina sua senha de acesso clicando no botão abaixo:</p>
             <p style='text-align:center;margin:25px 0;'>
-                <a href='{$link}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
+                <a href='{$link}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
                     Definir Minha Senha
                 </a>
             </p>
@@ -351,7 +351,7 @@ class User
             <p style='font-size:0.78rem;color:#bbb;word-break:break-all;'>Link direto: {$link}</p>"
         );
 
-        return Mailer::send($user['email'], 'Defina sua senha - ON Solutions Helpdesk', $htmlBody);
+        return Mailer::send($user['email'], 'Defina sua senha - Brooks Construtora Helpdesk', $htmlBody);
     }
 
     /**
@@ -393,7 +393,7 @@ class User
             "<p>Olá, <strong>" . htmlspecialchars($user['name']) . "</strong>!</p>
             <p>Recebemos uma solicitação para redefinir o seu <strong>PIN de acesso</strong> (login por PIN).</p>
             <p style='text-align:center;margin:25px 0;'>
-                <a href='{$link}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
+                <a href='{$link}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
                     Definir Novo PIN
                 </a>
             </p>
@@ -402,6 +402,6 @@ class User
             <p style='font-size:0.78rem;color:#bbb;word-break:break-all;'>Link direto: {$link}</p>"
         );
 
-        return Mailer::send($user['email'], 'Redefinição de PIN de acesso - ON Solutions Helpdesk', $htmlBody);
+        return Mailer::send($user['email'], 'Redefinição de PIN de acesso - Brooks Construtora Helpdesk', $htmlBody);
     }
 }

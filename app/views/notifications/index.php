@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Notificações - ON Solutions Helpdesk'; $currentPage = 'notifications'; ?>
+<?php $pageTitle = 'Notificações - Brooks Construtora Helpdesk'; $currentPage = 'notifications'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -52,7 +52,7 @@
 
 <!-- Toast de confirmação -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1080;">
-    <div id="notifToast" class="toast align-items-center text-white border-0" style="background:#00997D;" role="alert">
+    <div id="notifToast" class="toast align-items-center text-white border-0" style="background:#2c4a6e;" role="alert">
         <div class="d-flex">
             <div class="toast-body"><i class="bi bi-check-circle-fill me-1"></i> <span id="notifToastMsg">Notificação marcada como lida</span></div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>

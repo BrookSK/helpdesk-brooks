@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Cronograma - ON Solutions Helpdesk'; $currentPage = 'schedule'; ?>
+<?php $pageTitle = 'Cronograma - Brooks Construtora Helpdesk'; $currentPage = 'schedule'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -59,8 +59,8 @@ $statusLabels = [
     .gantt-row-track { position:relative; flex:1; }
     .gantt-grid-line { position:absolute; top:0; bottom:0; width:1px; background:#f1f5f9; }
     .gantt-grid-line.is-weekend-bg { background:#fafbfd; width:var(--col-w,64px); }
-    .gantt-today-line { position:absolute; top:0; bottom:0; width:2px; background:#00BFA6; z-index:3; }
-    .gantt-today-line::before { content:''; position:absolute; top:-1px; left:-4px; width:10px; height:10px; border-radius:50%; background:#00BFA6; }
+    .gantt-today-line { position:absolute; top:0; bottom:0; width:2px; background:#4a90d9; z-index:3; }
+    .gantt-today-line::before { content:''; position:absolute; top:-1px; left:-4px; width:10px; height:10px; border-radius:50%; background:#4a90d9; }
 
     .gantt-bar { position:absolute; top:50%; transform:translateY(-50%); height:26px; border-radius:8px;
         display:flex; align-items:center; padding:0 10px; z-index:2; box-shadow:0 2px 6px rgba(15,23,42,.16);
@@ -86,7 +86,7 @@ $statusLabels = [
     .cal-cell { min-height:104px; border:1px solid #eef2f6; border-radius:10px; padding:6px; background:#fff; transition:border-color .15s; }
     .cal-cell:hover { border-color:#d7e3ea; }
     .cal-cell.other-month { background:#f8fafc; }
-    .cal-cell.today { border-color:var(--primary); box-shadow:0 0 0 2px rgba(0,191,166,.18); }
+    .cal-cell.today { border-color:var(--primary); box-shadow:0 0 0 2px rgba(74,144,217,.18); }
     .cal-daynum { font-size:0.74rem; color:#94a3b8; font-weight:700; }
     .cal-cell.today .cal-daynum { color:var(--primary); }
     .cal-event { font-size:0.66rem; padding:3px 7px; border-radius:6px; margin-top:3px; color:#fff; font-weight:600;

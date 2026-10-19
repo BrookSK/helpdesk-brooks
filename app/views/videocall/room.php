@@ -28,7 +28,7 @@ $bgJson = json_encode($backgrounds ?? [], JSON_UNESCAPED_SLASHES);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        :root { --brand:#00BFA6; --brand-dark:#009e88; --bg:#0f1020; --panel:#1a1c2e; --panel2:#23263d; }
+        :root { --brand:#4a90d9; --brand-dark:#2c4a6e; --bg:#0f1020; --panel:#1a1c2e; --panel2:#23263d; }
         * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
         html,body { height:100%; }
         body { margin:0; background:var(--bg); color:#e8eaf1; font-family:'Segoe UI',system-ui,Arial,sans-serif; overflow:hidden; }
@@ -44,7 +44,7 @@ $bgJson = json_encode($backgrounds ?? [], JSON_UNESCAPED_SLASHES);
         .lobby-left { min-width:0; }
         .lobby-right { min-width:0; }
         @media (max-width:760px){ .lobby-grid { grid-template-columns:1fr; gap:16px; } .lobby-card { max-width:440px; } }
-        .private-badge { display:inline-flex; align-items:center; gap:5px; font-size:.72rem; background:rgba(0,191,166,.15); color:var(--brand); padding:3px 9px; border-radius:999px; margin-bottom:12px; }
+        .private-badge { display:inline-flex; align-items:center; gap:5px; font-size:.72rem; background:rgba(74,144,217,.15); color:var(--brand); padding:3px 9px; border-radius:999px; margin-bottom:12px; }
         .lb-presence { display:flex; align-items:center; gap:10px; background:var(--panel2); border-radius:12px; padding:9px 12px; margin-bottom:14px; }
         .lb-presence-avatars { display:flex; }
         .lb-presence-avatars .av { width:32px; height:32px; border-radius:50%; border:2px solid var(--panel); margin-left:-8px; background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:center; font-size:.8rem; font-weight:700; overflow:hidden; background-size:cover; background-position:center; }
@@ -61,7 +61,7 @@ $bgJson = json_encode($backgrounds ?? [], JSON_UNESCAPED_SLASHES);
         .preview-off-text { font-size:.9rem; font-weight:600; }
         .form-label { font-size:.78rem; font-weight:600; color:#9aa2c0; margin-bottom:5px; }
         .form-control, .form-select { background:var(--panel2); border:1.5px solid #33375a; color:#fff; border-radius:12px; padding:10px 12px; font-size:.9rem; }
-        .form-control:focus, .form-select:focus { background:var(--panel2); color:#fff; border-color:var(--brand); box-shadow:0 0 0 3px rgba(0,191,166,.2); }
+        .form-control:focus, .form-select:focus { background:var(--panel2); color:#fff; border-color:var(--brand); box-shadow:0 0 0 3px rgba(74,144,217,.2); }
         .form-select option { background:var(--panel2); }
         .btn-join { background:var(--brand); border:none; color:#fff; border-radius:14px; padding:13px; font-weight:700; width:100%; }
         .btn-join:hover:not(:disabled) { background:var(--brand-dark); }
@@ -2661,7 +2661,7 @@ function drawTileVideo(ctx, v, x, y, w, h, opts) {
         const initial = nm.replace(/\s*\(.*$/, '').trim().charAt(0).toUpperCase() || 'C';
         const r = Math.max(24, Math.min(w, h) * 0.18);
         const cx = x + w / 2, cy = y + h / 2;
-        ctx.fillStyle = '#00BFA6';
+        ctx.fillStyle = '#4a90d9';
         ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.font = '700 ' + Math.round(r) + 'px system-ui, Arial, sans-serif';

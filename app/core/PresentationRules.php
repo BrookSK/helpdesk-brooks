@@ -173,7 +173,7 @@ class PresentationRules
         return "<p>Olá, <strong>{$saud}</strong>!</p>"
             . "<p>Preparamos uma apresentação para você conhecer melhor nosso trabalho. Clique no botão abaixo para visualizar:</p>"
             . "<p style='text-align:center;margin:25px 0;'>"
-            . "<a href='{$href}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Ver apresentação</a>"
+            . "<a href='{$href}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Ver apresentação</a>"
             . "</p>"
             . "<p style='font-size:0.8rem;color:#888;word-break:break-all;'>Link direto: {$href}</p>";
     }
@@ -207,11 +207,11 @@ class PresentationRules
         ];
 
         return [
-            $s('hero', 'ON Solutions', 'Apresentação comercial',
+            $s('hero', 'Brooks Construtora', 'Apresentação comercial',
                 "Estratégia e tecnologia aplicadas a resultados.\n\nConsultoria estratégica comercial, inteligência de mercado e soluções sob medida para empresas que querem crescer com clareza."),
 
             $s('list', 'Quem somos', 'Estratégia e tecnologia aplicadas a resultados.',
-                "A ON Solutions Brasil atua como parceira de consultoria estratégica comercial e inteligência de mercado, e desenvolve soluções tecnológicas sob medida.\n\nComeçamos pelo entendimento do negócio, dos processos e dos objetivos de cada cliente. Não vendemos código: vendemos melhoria operacional e crescimento, por meio de estratégia e tecnologia.", [
+                "A Brooks Construtora Brasil atua como parceira de consultoria estratégica comercial e inteligência de mercado, e desenvolve soluções tecnológicas sob medida.\n\nComeçamos pelo entendimento do negócio, dos processos e dos objetivos de cada cliente. Não vendemos código: vendemos melhoria operacional e crescimento, por meio de estratégia e tecnologia.", [
                 ['Consultoria estratégica comercial', 'Diagnóstico, posicionamento, CRM, funil de vendas e acompanhamento para organizar e acelerar a operação comercial.'],
                 ['Inteligência de mercado', 'Leitura de dados e indicadores de mercado para decidir com clareza onde investir e como crescer.'],
                 ['Tecnologia sob medida', 'Sistemas, ERP, CRM, integrações, automações e IA desenhados a partir do processo real de cada operação.'],
@@ -242,7 +242,7 @@ class PresentationRules
                 ['Consultoria tecnológica', 'Diagnóstico de processos, sistemas e gargalos.'],
             ]),
 
-            $s('cards', 'Clientes', 'Quem confia na ON Solutions.',
+            $s('cards', 'Clientes', 'Quem confia na Brooks Construtora.',
                 'Mais de 50 clientes ativos e mais de 100 projetos entregues.', [
                 ['Brazilianna', "Desenvolvimento de software e criação de processos comerciais para envios e pagamentos internacionais.\n+62% público   +54% faturamento   6 meses", 'assets/proposal/clients/brazilianna.jpg'],
                 ['Quatri Automação', "Após dois anos de falhas contínuas, assumimos software, performance e inteligência de mercado.\n+38% público   +41% faturamento   4 meses", 'assets/proposal/clients/quatri.jpg'],

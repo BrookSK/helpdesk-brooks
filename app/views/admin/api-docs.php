@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Documentação da API de demandas - ON Solutions Helpdesk'; $currentPage = 'settings'; ?>
+<?php $pageTitle = 'Documentação da API de demandas - Brooks Construtora Helpdesk'; $currentPage = 'settings'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 

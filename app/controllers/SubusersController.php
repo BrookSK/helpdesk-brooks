@@ -205,13 +205,13 @@ class SubusersController extends Controller
                 <p style='margin:5px 0;'><strong>Senha:</strong> {$password}</p>
             </div>
             <p style='text-align:center;margin:20px 0;'>
-                <a href='{$loginUrl}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
+                <a href='{$loginUrl}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>
                     Acessar o Sistema
                 </a>
             </p>
             <p style='font-size:0.82rem;color:#999;'>Recomendamos que altere sua senha no primeiro acesso.</p>"
         );
 
-        Mailer::send($email, 'Seu acesso ao Helpdesk - ON Solutions', $htmlBody);
+        Mailer::send($email, 'Seu acesso ao Helpdesk - Brooks Construtora', $htmlBody);
     }
 }

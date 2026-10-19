@@ -55,7 +55,7 @@ class ContractDelivery
         return "<p>Olá, <strong>{$saud}</strong>!</p>"
             . "<p>O contrato <strong>{$t}</strong> está pronto para sua revisão. Clique no botão abaixo para ler e aprovar (ou pedir ajustes):</p>"
             . "<p style='text-align:center;margin:25px 0;'>"
-            . "<a href='{$link}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Revisar contrato</a>"
+            . "<a href='{$link}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>Revisar contrato</a>"
             . "</p>"
             . "<p style='font-size:0.8rem;color:#888;word-break:break-all;'>Link direto: {$link}</p>";
     }

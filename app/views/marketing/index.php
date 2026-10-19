@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Marketing - ON Solutions Helpdesk'; $currentPage = 'marketing'; ?>
+<?php $pageTitle = 'Marketing - Brooks Construtora Helpdesk'; $currentPage = 'marketing'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -108,7 +108,7 @@ $socialNetworks = ['Instagram', 'Facebook', 'LinkedIn', 'TikTok', 'YouTube', 'X 
 .cal-grid th { background: #f8f9fa; text-align: center; font-weight: 600; font-size: 0.72rem; padding: 6px 4px; border: 1px solid #eef0f2; color: #667; text-transform: uppercase; letter-spacing: .3px; }
 .cal-grid td { border: 1px solid #eef0f2; vertical-align: top; height: 110px; padding: 4px; position: relative; }
 .cal-grid td.other-month { background: #fafbfc; }
-.cal-grid td.today { background: #f0faf8; }
+.cal-grid td.today { background: #eef4fb; }
 .cal-daynum { font-size: 0.72rem; font-weight: 600; color: #556; display: inline-block; margin-bottom: 2px; }
 .cal-cell-add { position: absolute; top: 3px; right: 4px; opacity: 0; font-size: 0.7rem; color: var(--primary); cursor: pointer; transition: opacity .15s; }
 .cal-grid td:hover .cal-cell-add { opacity: 1; }

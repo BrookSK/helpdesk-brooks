@@ -62,11 +62,11 @@ final class MeetingMinutesDeliveryTest extends TestCase
 
     public function testWhatsappMessageContemLinkSaudacaoEAssunto(): void
     {
-        $msg = MeetingMinutesDelivery::whatsappMessage('Lucas', 'https://x/minutesView/abc', 'Reunião com Cliente', 'ON Solutions');
+        $msg = MeetingMinutesDelivery::whatsappMessage('Lucas', 'https://x/minutesView/abc', 'Reunião com Cliente', 'Brooks Construtora');
         $this->assertStringContainsString('Lucas', $msg);
         $this->assertStringContainsString('https://x/minutesView/abc', $msg);
         $this->assertStringContainsString('Reunião com Cliente', $msg);
-        $this->assertStringContainsString('ON Solutions', $msg);
+        $this->assertStringContainsString('Brooks Construtora', $msg);
     }
 
     public function testWhatsappMessageSemNomeNemTituloNaoQuebra(): void

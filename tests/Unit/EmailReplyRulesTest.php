@@ -110,7 +110,7 @@ final class EmailReplyRulesTest extends TestCase
     {
         $this->assertFalse(EmailReplyRules::isNoise([
             'from' => 'joao@empresa.com',
-            'subject' => 'Re: Apresentação ON Solutions',
+            'subject' => 'Re: Apresentação Brooks Construtora',
             'auto_submitted' => 'no',
         ]));
     }

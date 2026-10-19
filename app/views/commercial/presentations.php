@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Apresentações - ON Solutions Helpdesk'; $currentPage = 'presentations'; ?>
+<?php $pageTitle = 'Apresentações - Brooks Construtora Helpdesk'; $currentPage = 'presentations'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 <?php
@@ -9,7 +9,7 @@ $statusBadge = ['draft' => 'secondary', 'published' => 'success'];
     <div class="top-bar">
         <div>
             <h5 class="mb-0">Apresentações</h5>
-            <small class="text-muted">Esteira comercial — apresente a ON Solutions ao cliente antes da proposta</small>
+            <small class="text-muted">Esteira comercial — apresente a Brooks Construtora ao cliente antes da proposta</small>
         </div>
         <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newPresentationModal"><i class="bi bi-plus-lg"></i> Nova apresentação</button>
     </div>
@@ -68,7 +68,7 @@ $statusBadge = ['draft' => 'secondary', 'published' => 'success'];
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label small fw-medium">Título *</label>
-          <input type="text" id="na-title" class="form-control form-control-sm" placeholder="Ex.: Apresentação ON Solutions — Empresa X" autofocus>
+          <input type="text" id="na-title" class="form-control form-control-sm" placeholder="Ex.: Apresentação Brooks Construtora — Empresa X" autofocus>
         </div>
         <div class="mb-3">
           <label class="form-label small fw-medium">Lead / contato (CRM)</label>

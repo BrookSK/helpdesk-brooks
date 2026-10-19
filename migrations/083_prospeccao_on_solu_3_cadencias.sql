@@ -24,9 +24,9 @@
 -- =====================================================================
 
 INSERT INTO message_templates (channel, name, subject, body)
-SELECT 'email', 'ON Solu · F1 E1 Abertura', 'Apresentação · ON Solutions Brasil',
+SELECT 'email', 'ON Solu · F1 E1 Abertura', 'Apresentação · Brooks Construtora Brasil',
 '<p>Olá, {{primeiro_nome}}.</p>
-<p>Sou da ON Solutions Brasil e escrevo para me apresentar.</p>
+<p>Sou da Brooks Construtora Brasil e escrevo para me apresentar.</p>
 <p>Trabalhamos com organização e automação de processos comerciais e operacionais. Na prática, desenhamos o fluxo de trabalho de ponta a ponta, do primeiro contato com o cliente até o pós-venda, reunimos em um só lugar a informação que costuma circular entre planilhas, e-mails e aplicativos de mensagem, e automatizamos as etapas repetitivas que hoje consomem tempo da equipe.</p>
 <p>Atendemos empresas de médio porte em fase de crescimento, principalmente em serviços, indústria e distribuição. Os projetos duram de seis a doze semanas, são conduzidos junto com a equipe interna e terminam com essa equipe operando o processo sozinha.</p>
 <p>O motivo do contato é que a {{empresa}} tem o perfil das empresas com quem trabalhamos, e me parece útil que você saiba que existimos antes de o assunto entrar na pauta de vocês.</p>
@@ -68,7 +68,7 @@ SELECT 'email', 'ON Solu · F1 E5 Material', 'Vinte minutos com referências de 
 WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · F1 E5 Material');
 
 INSERT INTO message_templates (channel, name, subject, body)
-SELECT 'email', 'ON Solu · F1 E6 Uma linha', 'Re: Apresentação · ON Solutions Brasil',
+SELECT 'email', 'ON Solu · F1 E6 Uma linha', 'Re: Apresentação · Brooks Construtora Brasil',
 '<p>Olá, {{primeiro_nome}}.</p>
 <p>Prefere que eu retome esse assunto mais para frente?</p>
 <p>Posso reaparecer quando o planejamento do próximo ciclo estiver em pauta, se for um momento melhor.</p>'
@@ -89,7 +89,7 @@ WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · F1 E7
 -- =====================================================================
 
 INSERT INTO message_templates (channel, name, subject, body)
-SELECT 'email', 'ON Solu · F2 E2 Follow curto', 'Re: Apresentação · ON Solutions Brasil',
+SELECT 'email', 'ON Solu · F2 E2 Follow curto', 'Re: Apresentação · Brooks Construtora Brasil',
 '<p>Olá, {{primeiro_nome}}.</p>
 <p>Complemento o contato anterior com a ideia que mais influencia esse tipo de projeto.</p>
 <p>O ganho maior aparece antes da tecnologia entrar. Quando o fluxo está desenhado com clareza, quem faz, em que ordem e com qual registro, a escolha da ferramenta vira uma decisão simples e barata. Quando não está, a ferramenta se torna mais um lugar onde a informação se divide.</p>
@@ -99,7 +99,7 @@ WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · F2 E2
 
 INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'ON Solu · F2 WA1 Primeiro contato', NULL,
-'Olá, {{primeiro_nome}}, tudo bem? Aqui é da ON Solutions Brasil.
+'Olá, {{primeiro_nome}}, tudo bem? Aqui é da Brooks Construtora Brasil.
 
 Te escrevi por e-mail nos últimos dias com uma apresentação do nosso trabalho: organização e automação de processos comerciais e operacionais, em projetos de seis a doze semanas conduzidos junto com a equipe da casa.
 
@@ -139,7 +139,7 @@ WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · F2 WA
 
 INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'ON Solu · F3 WA1 Abertura', NULL,
-'Olá, {{primeiro_nome}}, tudo bem? Aqui é da ON Solutions Brasil, e escrevo para me apresentar.
+'Olá, {{primeiro_nome}}, tudo bem? Aqui é da Brooks Construtora Brasil, e escrevo para me apresentar.
 
 Trabalhamos com organização e automação de processos comerciais e operacionais em empresas de médio porte de serviços, indústria e distribuição. Desenhamos o fluxo de trabalho de ponta a ponta, reunimos a informação em um só lugar e automatizamos as etapas repetitivas, em projetos de seis a doze semanas conduzidos junto com a equipe da casa.
 

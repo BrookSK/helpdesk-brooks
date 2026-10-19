@@ -1400,9 +1400,9 @@ Toda mídia é salva no banco com status `pending` ANTES de enviar via API:
 
 | Uso | Cor | Hex |
 |-----|-----|-----|
-| Primária (botões, links) | Verde-teal | `#00BFA6` |
+| Primária (botões, links) | Verde-teal | `#4a90d9` |
 | Primária escura (hover) | Verde-teal escuro | `#00897B` |
-| Primária clara (background) | Verde-teal claro | `#e0f7f4` |
+| Primária clara (background) | Verde-teal claro | `#eaf2fb` |
 | Background chat | Bege WhatsApp | `#efeae2` |
 | Mensagem minha | Verde claro | `#d9fdd3` |
 | Mensagem do outro | Branco | `#ffffff` |

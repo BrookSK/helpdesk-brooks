@@ -367,7 +367,7 @@
 .crm-card-title { font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; }
 .crm-card-phone { font-size: 0.72rem; color: #666; margin-bottom: 4px; }
 .crm-card-footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; margin-top: 6px; }
-.crm-ghost { opacity: 0.4; background: #E0F7F4 !important; border: 2px dashed var(--primary) !important; }
+.crm-ghost { opacity: 0.4; background: #eaf2fb !important; border: 2px dashed var(--primary) !important; }
 .crm-drag { box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important; transform: rotate(2deg); }
 .activity-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.78rem; }
 .activity-item:last-child { border-bottom: none; }

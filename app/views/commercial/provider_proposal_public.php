@@ -1,5 +1,5 @@
 <?php
-$appName = htmlspecialchars((string) Config::get('app_name') ?: 'ON Solutions', ENT_QUOTES);
+$appName = htmlspecialchars((string) Config::get('app_name') ?: 'Brooks Construtora', ENT_QUOTES);
 $logo = Config::get('app_logo');
 $token = htmlspecialchars($provider['public_token'] ?? '', ENT_QUOTES);
 $respondido = !empty($provider['proposal_responded_at']);
@@ -19,7 +19,7 @@ $payType = $payTypeLabels[$provider['pay_type'] ?? ''] ?? '';
         * { box-sizing:border-box; }
         body { margin:0; background:#f3f4f8; color:#1b1d2a; font-family:'Segoe UI',system-ui,Arial,sans-serif; }
         .sheet { max-width:760px; margin:24px auto; background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.08); overflow:hidden; }
-        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #00BFA6; }
+        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #4a90d9; }
         .hd img { max-height:46px; } .hd .co { font-size:1.15rem; font-weight:700; } .hd .sp { flex:1; }
         .hd .meta { text-align:right; font-size:.8rem; color:#6b7088; }
         .bd { padding:28px 32px; }
@@ -29,7 +29,7 @@ $payType = $payTypeLabels[$provider['pay_type'] ?? ''] ?? '';
         .block { background:#f7f8fc; border-radius:8px; padding:12px 14px; font-size:.9rem; margin-top:12px; white-space:pre-wrap; }
         .actions { display:flex; gap:10px; margin-top:22px; }
         .btn { border:none; border-radius:8px; padding:11px 18px; font-size:.95rem; cursor:pointer; }
-        .btn-ok { background:#00BFA6; color:#fff; } .btn-no { background:#fff; color:#c0392b; border:1px solid #c0392b; }
+        .btn-ok { background:#4a90d9; color:#fff; } .btn-no { background:#fff; color:#c0392b; border:1px solid #c0392b; }
         .ft { padding:16px 32px; border-top:1px solid #e6e8f0; font-size:.78rem; color:#6b7088; text-align:center; }
         .banner { padding:12px 16px; border-radius:8px; font-size:.9rem; margin-bottom:12px; }
         .banner.ok { background:#e6f7f3; color:#0b8c7a; } .banner.no { background:#fdeaea; color:#c0392b; }

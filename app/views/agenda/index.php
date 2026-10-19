@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Agenda - ON Solutions Helpdesk'; $currentPage = 'agenda'; ?>
+<?php $pageTitle = 'Agenda - Brooks Construtora Helpdesk'; $currentPage = 'agenda'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -69,7 +69,7 @@ $totalHistory = array_sum(array_map('count', $groupedHistory));
     <!-- ABAS: Agenda principal × Histórico -->
     <div class="d-flex align-items-center gap-3 mb-3 border-bottom pb-2">
         <button type="button" class="btn btn-sm px-3 fw-semibold agenda-tab-btn active" data-tab="agenda"
-                style="border:none;border-bottom:3px solid var(--primary,#00BFA6);border-radius:0;background:transparent;color:var(--primary,#00BFA6);">
+                style="border:none;border-bottom:3px solid var(--primary,#4a90d9);border-radius:0;background:transparent;color:var(--primary,#4a90d9);">
             <i class="bi bi-calendar2-check"></i> Agenda
         </button>
         <button type="button" class="btn btn-sm px-3 fw-semibold agenda-tab-btn" data-tab="history"
@@ -423,8 +423,8 @@ document.querySelectorAll('.agenda-tab-btn').forEach(btn => {
             b.style.borderBottom = '3px solid transparent';
             b.style.color = '#888';
         });
-        this.style.borderBottom = '3px solid var(--primary, #00BFA6)';
-        this.style.color = 'var(--primary, #00BFA6)';
+        this.style.borderBottom = '3px solid var(--primary, #4a90d9)';
+        this.style.color = 'var(--primary, #4a90d9)';
         // Conteúdo
         document.getElementById('tab-agenda').style.display   = tab === 'agenda'   ? '' : 'none';
         document.getElementById('tab-history').style.display  = tab === 'history'  ? '' : 'none';

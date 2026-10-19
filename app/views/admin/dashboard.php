@@ -1,4 +1,4 @@
-﻿<?php $pageTitle = 'Admin Dashboard - ON Solutions Helpdesk'; $currentPage = 'dashboard'; ?>
+﻿<?php $pageTitle = 'Admin Dashboard - Brooks Construtora Helpdesk'; $currentPage = 'dashboard'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 

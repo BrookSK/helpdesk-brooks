@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Configurar Banco - ON Solutions Helpdesk'; $currentPage = 'settings'; ?>
+<?php $pageTitle = 'Configurar Banco - Brooks Construtora Helpdesk'; $currentPage = 'settings'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php if ($user): ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>

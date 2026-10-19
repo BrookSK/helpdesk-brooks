@@ -108,7 +108,7 @@ class ProviderProposalRules
         return "<p>Olá, <strong>{$safeName}</strong>!</p>"
             . "<p>Preparamos uma proposta de parceria{$role}.</p>"
             . "<p style='text-align:center;margin:24px 0;'>"
-            . "<a href='{$safeLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;'>Ver proposta</a></p>"
+            . "<a href='{$safeLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;'>Ver proposta</a></p>"
             . "<p>No link você pode aceitar ou recusar (informando o motivo). Qualquer dúvida, estamos à disposição.</p>";
     }
 }

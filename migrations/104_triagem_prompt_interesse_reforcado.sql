@@ -38,11 +38,11 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
             'subject','Que bom, {{primeiro_nome}}! Vamos avançar',
             'ai_reply', 1,
             'model','gpt-4o-mini',
-            'company_info','A ON Solutions Brasil organiza e automatiza processos comerciais e operacionais (CRM, prospecção, atendimento e integrações). Projetos conduzidos junto com a equipe do cliente, normalmente de 6 a 12 semanas. Diferenciais: implantação prática, acompanhamento próximo e foco em resultado (mais organização, respostas mais rápidas e oportunidades sem cair no esquecimento). Não informamos preço fechado por mensagem — o valor depende do escopo, e por isso o ideal é uma conversa rápida.',
+            'company_info','A Brooks Construtora Brasil organiza e automatiza processos comerciais e operacionais (CRM, prospecção, atendimento e integrações). Projetos conduzidos junto com a equipe do cliente, normalmente de 6 a 12 semanas. Diferenciais: implantação prática, acompanhamento próximo e foco em resultado (mais organização, respostas mais rápidas e oportunidades sem cair no esquecimento). Não informamos preço fechado por mensagem — o valor depende do escopo, e por isso o ideal é uma conversa rápida.',
             'body','Para avançarmos, separei um espaço na agenda para uma conversa rápida (online, cerca de 45 minutos).')),
         JSON_OBJECT('id','sched','type','schedule','x',120,'y',780,'next','done','data', JSON_OBJECT(
             'channel','reply','duration',45,
-            'title','Agende sua reunião com a ON Solutions Brasil',
+            'title','Agende sua reunião com a Brooks Construtora Brasil',
             'message', CONCAT(
                 '👉 Escolha o melhor dia e horário para você neste link:\n',
                 '{{link_agendamento}}\n\n',

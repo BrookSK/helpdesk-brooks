@@ -21,18 +21,18 @@ CREATE TABLE IF NOT EXISTS email_signatures (
     site VARCHAR(200) DEFAULT NULL,
     tagline VARCHAR(255) DEFAULT NULL,        -- linha final
     logo VARCHAR(255) DEFAULT NULL,           -- caminho da logo (upload); vazio = usa logo do sistema
-    color VARCHAR(20) DEFAULT '#00997D',
+    color VARCHAR(20) DEFAULT '#2c4a6e',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_domain (domain)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Seed: ON Solutions (usa a logo do sistema por padrão — logo vazio).
+-- Seed: Brooks Construtora (usa a logo do sistema por padrão — logo vazio).
 INSERT INTO email_signatures (domain, company, specialties, contact_email, site, tagline, logo, color)
-SELECT 'onsolutionsbrasil.com.br', 'ON Solutions Brasil', 'Tecnologia • Desenvolvimento • Automação',
+SELECT 'onsolutionsbrasil.com.br', 'Brooks Construtora Brasil', 'Tecnologia • Desenvolvimento • Automação',
        'contato@onsolutionsbrasil.com.br', 'www.onsolutionsbrasil.com.br',
-       'Soluções inteligentes para transformar processos e negócios.', NULL, '#00997D'
+       'Soluções inteligentes para transformar processos e negócios.', NULL, '#2c4a6e'
 WHERE NOT EXISTS (SELECT 1 FROM email_signatures WHERE domain = 'onsolutionsbrasil.com.br');
 
 -- Seed: LRV Web (logo a configurar via upload em Configurações).

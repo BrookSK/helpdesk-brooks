@@ -53,7 +53,7 @@ final class PresentationRulesTest extends TestCase
         $sections = PresentationRules::defaultSections();
         $titles = array_column($sections, 'title');
         $this->assertLessThanOrEqual(10, count($sections));
-        foreach (['ON Solutions', 'Quem somos', 'Clientes'] as $t) {
+        foreach (['Brooks Construtora', 'Quem somos', 'Clientes'] as $t) {
             $this->assertContains($t, $titles);
         }
         $joined = implode("\n", $titles);

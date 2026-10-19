@@ -138,7 +138,7 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small fw-medium">Nome de Exibição</label>
-                            <input type="text" name="display_name" id="acc-display-name" class="form-control form-control-sm" placeholder="Ex: Comercial ON Solutions">
+                            <input type="text" name="display_name" id="acc-display-name" class="form-control form-control-sm" placeholder="Ex: Comercial Brooks Construtora">
                         </div>
 
                         <div class="col-12"><hr class="my-1"><small class="text-muted fw-medium">Configuração SMTP</small></div>

@@ -239,7 +239,7 @@ class ApiController extends Controller
      */
     public function documentos()
     {
-        $appName  = Config::get('app_name') ?: 'ON Solutions Helpdesk';
+        $appName  = Config::get('app_name') ?: 'Brooks Construtora Helpdesk';
         $faviconUrl = Config::get('app_favicon');
         $logoUrl  = Config::get('app_logo');
         $base     = baseUrl('');

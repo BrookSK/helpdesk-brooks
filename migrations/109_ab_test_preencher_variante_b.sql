@@ -23,7 +23,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
             'body',(SELECT body FROM message_templates WHERE name='ON Solu · F1 E1 Abertura'),
             'ab_enabled',1,
             'subject_b','{{primeiro_nome}}, 3 números que revelam o custo do processo atual',
-            'body_b','Olá, {{primeiro_nome}}.\n\nSem rodeios: a maioria das operações perde tempo e oportunidades em três pontos — digitação/conferência manual, demora na primeira resposta ao cliente e follow-ups que não acontecem.\n\nNa ON Solutions organizamos e automatizamos esse fluxo junto com a sua equipe. Faz sentido eu te mostrar como isso se aplicaria à {{empresa}}?')),
+            'body_b','Olá, {{primeiro_nome}}.\n\nSem rodeios: a maioria das operações perde tempo e oportunidades em três pontos — digitação/conferência manual, demora na primeira resposta ao cliente e follow-ups que não acontecem.\n\nNa Brooks Construtora organizamos e automatizamos esse fluxo junto com a sua equipe. Faz sentido eu te mostrar como isso se aplicaria à {{empresa}}?')),
         JSON_OBJECT('id','w1','type','wait','x',360,'y',150,'next','e2','data', JSON_OBJECT('amount',2,'unit','minutes')),
         JSON_OBJECT('id','e2','type','send','x',360,'y',260,'next','w2','nextReply','triage','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · F1 E2 Follow'),
@@ -108,7 +108,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · F2 WA1 Primeiro contato'),
             'body',(SELECT body FROM message_templates WHERE name='ON Solu · F2 WA1 Primeiro contato'),
             'ab_enabled',1,
-            'body_b','Oi, {{primeiro_nome}}! Aqui é da ON Solutions. Ajudamos a {{empresa}} a automatizar tarefas do comercial/operacional. Posso te explicar rapidinho como funciona?')),
+            'body_b','Oi, {{primeiro_nome}}! Aqui é da Brooks Construtora. Ajudamos a {{empresa}} a automatizar tarefas do comercial/operacional. Posso te explicar rapidinho como funciona?')),
         JSON_OBJECT('id','w3','type','wait','x',360,'y',740,'next','wa2','data', JSON_OBJECT('amount',2,'unit','minutes')),
         JSON_OBJECT('id','wa2','type','whatsapp','x',360,'y',850,'next','w4','nextReply','triage','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · F2 WA2 Valor'),
@@ -148,7 +148,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · F3 WA1 Abertura'),
             'body',(SELECT body FROM message_templates WHERE name='ON Solu · F3 WA1 Abertura'),
             'ab_enabled',1,
-            'body_b','Oi, {{primeiro_nome}}! Aqui é da ON Solutions. A gente organiza e automatiza processos comerciais/operacionais. Posso te mostrar como isso ajudaria a {{empresa}}?')),
+            'body_b','Oi, {{primeiro_nome}}! Aqui é da Brooks Construtora. A gente organiza e automatiza processos comerciais/operacionais. Posso te mostrar como isso ajudaria a {{empresa}}?')),
         JSON_OBJECT('id','w1','type','wait','x',360,'y',150,'next','wa2','data', JSON_OBJECT('amount',2,'unit','minutes')),
         JSON_OBJECT('id','wa2','type','whatsapp','x',360,'y',260,'next','w2','nextReply','triage','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · F3 WA2 Valor'),

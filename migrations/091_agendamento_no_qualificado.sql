@@ -71,7 +71,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
         -- NOVO: envia o link de agendamento ao lead interessado
         JSON_OBJECT('id','sched','type','schedule','x',560,'y',860,'next','done','data', JSON_OBJECT(
             'channel','auto','duration',45,
-            'title','Reunião com a ON Solutions Brasil',
+            'title','Reunião com a Brooks Construtora Brasil',
             'message','{{primeiro_nome}}, para avançarmos, escolha o melhor dia e horário para uma conversa rápida (online): {{link_agendamento}}')),
         JSON_OBJECT('id','neg_mail','type','send','x',960,'y',500,'next','neg_unsub','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · Triagem Sem Interesse (Remoção)'),
@@ -138,7 +138,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
         JSON_OBJECT('id','pos_tag','type','tag','x',560,'y',740,'next','sched','data', JSON_OBJECT('label','interessado','color','#28a745')),
         JSON_OBJECT('id','sched','type','schedule','x',560,'y',860,'next','done','data', JSON_OBJECT(
             'channel','auto','duration',45,
-            'title','Reunião com a ON Solutions Brasil',
+            'title','Reunião com a Brooks Construtora Brasil',
             'message','{{primeiro_nome}}, que ótimo! Para avançarmos, escolha o melhor dia e horário para uma conversa rápida (online): {{link_agendamento}}')),
         JSON_OBJECT('id','neg_mail','type','send','x',960,'y',500,'next','neg_unsub','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · Triagem Sem Interesse (Remoção)'),
@@ -195,7 +195,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
         JSON_OBJECT('id','pos_tag','type','tag','x',560,'y',740,'next','sched','data', JSON_OBJECT('label','interessado','color','#28a745')),
         JSON_OBJECT('id','sched','type','schedule','x',560,'y',860,'next','done','data', JSON_OBJECT(
             'channel','whatsapp','duration',45,
-            'title','Reunião com a ON Solutions Brasil',
+            'title','Reunião com a Brooks Construtora Brasil',
             'message','{{primeiro_nome}}, que ótimo! Escolha o melhor dia e horário para uma conversa rápida (online): {{link_agendamento}}')),
         JSON_OBJECT('id','neg_wa','type','whatsapp','x',960,'y',500,'next','neg_unsub','data', JSON_OBJECT(
             'template_id',(SELECT id FROM message_templates WHERE name='ON Solu · Triagem Sem Interesse (Remoção) WA'),

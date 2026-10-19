@@ -333,7 +333,7 @@
         transition: background 0.15s;
     }
     .wpp-push-body:hover {
-        background: #f0faf8;
+        background: #eef4fb;
     }
     .wpp-push-msg {
         font-size: 0.8rem;

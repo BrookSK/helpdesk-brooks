@@ -72,9 +72,9 @@
             </div>
         </div>
         <div class="col">
-            <div class="card stat-card h-100" style="border-left-color:#00BFA6">
+            <div class="card stat-card h-100" style="border-left-color:#4a90d9">
                 <div class="stat-label">Ticket Médio (convertido)</div>
-                <div class="stat-value" style="color:#00997D;font-size:1.1rem;">R$ <?= number_format($stats['converted'] > 0 ? $stats['converted_value'] / $stats['converted'] : 0, 2, ',', '.') ?></div>
+                <div class="stat-value" style="color:#2c4a6e;font-size:1.1rem;">R$ <?= number_format($stats['converted'] > 0 ? $stats['converted_value'] / $stats['converted'] : 0, 2, ',', '.') ?></div>
             </div>
         </div>
     </div>

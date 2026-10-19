@@ -8,7 +8,7 @@
 
 INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'Apollo · WhatsApp 1º Contato', NULL,
-'Olá {{primeiro_nome}}, tudo bem? Aqui é da ON Solutions Brasil.
+'Olá {{primeiro_nome}}, tudo bem? Aqui é da Brooks Construtora Brasil.
 
 Te enviei um e-mail recentemente porque vi a {{empresa}} e achei que poderia fazer sentido conversarmos sobre algumas possibilidades de melhoria e automação de processos.
 

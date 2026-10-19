@@ -1,4 +1,4 @@
-﻿<?php $pageTitle = 'Demanda #' . $ticket['id'] . ' - ON Solutions Helpdesk'; $currentPage = 'tickets'; ?>
+﻿<?php $pageTitle = 'Demanda #' . $ticket['id'] . ' - Brooks Construtora Helpdesk'; $currentPage = 'tickets'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -128,7 +128,7 @@ if (!function_exists('categoryLabel')) {
                     <?php if (!empty($ticket['transcription'])): ?>
                     <div class="mt-3">
                         <h6 class="fw-bold" style="font-size:0.88rem"><i class="bi bi-mic"></i> Transcrição Original</h6>
-                        <div class="p-3 rounded border" style="font-size:0.83rem;line-height:1.6;background:#f0faf8;border-color:#b2f2e8 !important;">
+                        <div class="p-3 rounded border" style="font-size:0.83rem;line-height:1.6;background:#eef4fb;border-color:#3d6b9f !important;">
                             <?= nl2br(escape($ticket['transcription'])) ?>
                         </div>
                     </div>

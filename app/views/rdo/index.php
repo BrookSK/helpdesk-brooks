@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Relatório Diário - ON Solutions Helpdesk'; $currentPage = 'rdo'; ?>
+<?php $pageTitle = 'Relatório Diário - Brooks Construtora Helpdesk'; $currentPage = 'rdo'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -228,7 +228,7 @@
 /* ===== Kanban RDO (colunas por empresa) ===== */
 .rdo-kanban { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
 .rdo-col { flex: 0 0 290px; max-width: 290px; background: #f4f6f8; border-radius: 12px; display: flex; flex-direction: column; }
-.rdo-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #fff; border-radius: 12px 12px 0 0; border-top: 3px solid #00BFA6; }
+.rdo-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #fff; border-radius: 12px 12px 0 0; border-top: 3px solid #4a90d9; }
 .rdo-col-title { font-size: 0.78rem; font-weight: 700; color: #445; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rdo-col-count { font-size: 0.66rem; font-weight: 600; background: #eef0f2; color: #667; border-radius: 20px; padding: 1px 8px; flex-shrink: 0; }
 .rdo-col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 60px; }
@@ -246,7 +246,7 @@
 .rdo-cal-grid td.other-month { background: #fafbfc; }
 .rdo-cal-grid td.today { background: #eef7ff; }
 .rdo-cal-daynum { font-size: 0.72rem; font-weight: 600; color: #556; }
-.rdo-cal-cell-add { position: absolute; top: 3px; right: 4px; opacity: 0; font-size: 0.7rem; color: var(--primary,#00BFA6); cursor: pointer; }
+.rdo-cal-cell-add { position: absolute; top: 3px; right: 4px; opacity: 0; font-size: 0.7rem; color: var(--primary,#4a90d9); cursor: pointer; }
 .rdo-cal-grid td:hover .rdo-cal-cell-add { opacity: 1; }
 .rdo-cal-event { font-size: 0.68rem; padding: 2px 6px 2px 7px; border-radius: 4px; margin-bottom: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .rdo-cal-event.done { opacity: 0.6; }

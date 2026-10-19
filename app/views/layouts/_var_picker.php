@@ -43,10 +43,10 @@ function showVarMenu(x, y, targetEl) {
         border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);padding:4px;min-width:190px;max-height:280px;overflow:auto;font-size:0.82rem;`;
     _varMenu.innerHTML = '<div style="padding:4px 10px;color:#888;font-size:0.7rem;text-transform:uppercase;">Inserir variável</div>' +
         window.VAR_LIST.map(v => `<div class="var-item" data-k="${v.k}" style="padding:6px 10px;cursor:pointer;border-radius:6px;">
-            <code style="color:#00997D;">{{${v.k}}}</code> <span class="text-muted">${v.label}</span></div>`).join('');
+            <code style="color:#2c4a6e;">{{${v.k}}}</code> <span class="text-muted">${v.label}</span></div>`).join('');
     document.body.appendChild(_varMenu);
     _varMenu.querySelectorAll('.var-item').forEach(it => {
-        it.addEventListener('mouseenter', ()=> it.style.background = '#f0faf8');
+        it.addEventListener('mouseenter', ()=> it.style.background = '#eef4fb');
         it.addEventListener('mouseleave', ()=> it.style.background = '');
         it.addEventListener('mousedown', (e)=>{ e.preventDefault(); insertVar(targetEl, it.dataset.k); hideVarMenu(); });
     });

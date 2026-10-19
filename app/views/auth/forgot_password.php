@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Esqueci minha senha - ON Solutions Helpdesk</title>
+    <title>Esqueci minha senha - Brooks Construtora Helpdesk</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #00BFA6;
-            --primary-dark: #00997D;
+            --primary: #4a90d9;
+            --primary-dark: #2c4a6e;
         }
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background: linear-gradient(135deg, #1a2332 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -50,7 +50,7 @@
         }
         .form-control:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 0.2rem rgba(0,191,166,0.15);
+            box-shadow: 0 0 0 0.2rem rgba(74,144,217,0.15);
         }
         .logo-text {
             color: var(--primary);
@@ -66,8 +66,8 @@
 <body>
     <div class="card-auth">
         <div class="text-center mb-4">
-            <span class="logo-text">ON</span>
-            <span class="fs-4 fw-light text-dark"> Solutions</span>
+            <span class="logo-text">BROOKS</span>
+            <span class="fs-4 fw-light text-dark"> Construtora</span>
             <p class="text-muted mt-2 mb-0" style="font-size:0.88rem">Helpdesk</p>
         </div>
 

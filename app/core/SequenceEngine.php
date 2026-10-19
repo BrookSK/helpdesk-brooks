@@ -78,7 +78,7 @@ class SequenceEngine
         unset($this->emailBuffer[$participantId]);
         if (empty($buf['parts'])) return;
 
-        $subject = $buf['subjects'][0] ?? 'ON Solutions Brasil';
+        $subject = $buf['subjects'][0] ?? 'Brooks Construtora Brasil';
         $body = implode("\n", $buf['parts']); // partes já são blocos HTML (<p>...)
 
         try {
@@ -1511,7 +1511,7 @@ class SequenceEngine
                 . 'decision=true significa SIM (interesse); decision=false significa NÃO (recusa).';
             $responseFormat = ['type' => 'json_object'];
         } else {
-            $system = 'Você é um assistente comercial da ON Solutions Brasil. Responda de forma objetiva e profissional, '
+            $system = 'Você é um assistente comercial da Brooks Construtora Brasil. Responda de forma objetiva e profissional, '
                 . 'em português do Brasil, apenas com o texto solicitado (sem markdown).';
             $responseFormat = null;
         }
@@ -1619,7 +1619,7 @@ class SequenceEngine
         $context = $this->buildAiContext($contactId, $contact);
         if ($agentActive) {
             // Modo ATIVO: tira dúvidas em loop; pode devolver 'unclear' + 'reply'.
-            $system = "Você é um atendente virtual da ON Solutions Brasil. Responda dúvidas do lead sobre a empresa usando SOMENTE as informações fornecidas abaixo. "
+            $system = "Você é um atendente virtual da Brooks Construtora Brasil. Responda dúvidas do lead sobre a empresa usando SOMENTE as informações fornecidas abaixo. "
                 . "Seja cordial, objetivo e em português do Brasil. Não invente dados (preços, prazos) que não estejam na base. "
                 . ($instructions !== '' ? ("Regras adicionais: " . $instructions . " ") : "")
                 . "Seu papel é tirar as dúvidas do lead e, quando possível, concluir se ele QUER SEGUIR (avançar/agendar/demonstra interesse claro) ou QUER ENCERRAR (sem interesse/pede para parar). "
@@ -1631,7 +1631,7 @@ class SequenceEngine
         } else {
             // Modo INATIVO: classificação simples numa única passada, sem responder
             // dúvidas e sem 'unclear'. Deve decidir SIM ou NÃO.
-            $system = "Você classifica a intenção de um lead da ON Solutions Brasil a partir da última resposta e do histórico. "
+            $system = "Você classifica a intenção de um lead da Brooks Construtora Brasil a partir da última resposta e do histórico. "
                 . "Responda em português do Brasil e SOMENTE com JSON válido no formato: "
                 . '{"intent":"yes|no"}. '
                 . ($instructions !== '' ? ("Regras adicionais: " . $instructions . " ") : "")
@@ -1696,7 +1696,7 @@ class SequenceEngine
 
             // Sempre que houver texto de resposta, envia pelo mesmo canal do lead.
             if ($reply !== '') {
-                $this->replyText($participant, $contact, $reply, 'ON Solutions Brasil');
+                $this->replyText($participant, $contact, $reply, 'Brooks Construtora Brasil');
             }
 
             (new LeadTimelineService())->add($contactId, 'note',
@@ -1714,7 +1714,7 @@ class SequenceEngine
      * Envia um texto ao lead pelo MESMO canal da última resposta (e-mail bufferizado
      * ou WhatsApp imediato). Reaproveitado pelo Atendente IA.
      */
-    private function replyText($participant, $contact, $text, $subject = 'ON Solutions Brasil')
+    private function replyText($participant, $contact, $text, $subject = 'Brooks Construtora Brasil')
     {
         $channel = $this->lastReplyChannel($participant['contact_id'], $contact);
         if ($channel === 'email' && empty($contact['lead_email'])) $channel = 'whatsapp';
@@ -1873,7 +1873,7 @@ class SequenceEngine
         }
         $duration = (int)($data['duration'] ?? 0) ?: max(15, (int)(Config::get('booking_duration_min') ?? 45));
         $expiryDays = max(1, (int)(Config::get('booking_link_expiry_days') ?? 30));
-        $title = trim((string)($data['title'] ?? '')) ?: 'Reunião com a ON Solutions Brasil';
+        $title = trim((string)($data['title'] ?? '')) ?: 'Reunião com a Brooks Construtora Brasil';
 
         $contact = $this->db->fetch("SELECT id, contact_name, push_name, lead_email, phone, assigned_to FROM whatsapp_contacts WHERE id = ?", [$contactId]);
         if (!$contact) return ['detail' => 'Lead não encontrado', 'error' => 'no_contact'];
@@ -1918,7 +1918,7 @@ class SequenceEngine
             $account = $this->resolveAccount($this->db->fetch("SELECT email_account_id FROM email_sequences WHERE id = ?", [$participant['sequence_id']])['email_account_id'] ?? null);
             if ($account) {
                 $bodyHtml = '<p>' . nl2br(htmlspecialchars($rendered)) . '</p>'
-                    . '<p style="text-align:center;margin:24px 0;"><a href="' . htmlspecialchars($link, ENT_QUOTES) . '" style="background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Escolher data e horário</a></p>';
+                    . '<p style="text-align:center;margin:24px 0;"><a href="' . htmlspecialchars($link, ENT_QUOTES) . '" style="background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Escolher data e horário</a></p>';
                 $this->bufferEmail($participant, $account, $contact['lead_email'], $title, $bodyHtml, $node['id']);
                 $sent[] = 'e-mail';
             }
@@ -1992,7 +1992,7 @@ class SequenceEngine
         $context = $this->buildAiContext($contactId, $contact);
         $firstName = $this->render('{{primeiro_nome}}', $contact);
 
-        $system = "Você é um SDR da ON Solutions Brasil respondendo um lead no meio de uma conversa. "
+        $system = "Você é um SDR da Brooks Construtora Brasil respondendo um lead no meio de uma conversa. "
             . "Responda de forma BREVE (1 a 3 frases), específica e cordial, em português do Brasil, "
             . "à ÚLTIMA dúvida/mensagem do lead, usando SOMENTE as informações abaixo. "
             . "Não invente preços/prazos que não estejam na base. NÃO cumprimente de novo se a conversa já começou, "
@@ -2048,7 +2048,7 @@ class SequenceEngine
         if (!$contact) return ['detail' => 'Lead não encontrado', 'error' => 'no_contact', 'channel' => null];
 
         $channel = $this->lastReplyChannel($contactId, $contact);
-        $subject = $this->render((string)($data['subject'] ?? 'ON Solutions Brasil'), $contact);
+        $subject = $this->render((string)($data['subject'] ?? 'Brooks Construtora Brasil'), $contact);
         $bodyRaw = (string)($data['body'] ?? '');
         $body = $this->render($bodyRaw, $contact);
 
@@ -2402,7 +2402,7 @@ class SequenceEngine
      */
     private function applyLabel($contactId, $label, $color = null)
     {
-        $color = $color ?: '#00BFA6';
+        $color = $color ?: '#4a90d9';
         $row = $this->db->fetch("SELECT id FROM whatsapp_labels WHERE name = ? LIMIT 1", [$label]);
         if ($row) {
             $labelId = (int) $row['id'];

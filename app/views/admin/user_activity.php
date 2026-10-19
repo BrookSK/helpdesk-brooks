@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Auditoria de ' . escape($targetUser['name']) . ' - ON Solutions Helpdesk'; $currentPage = 'users'; ?>
+<?php $pageTitle = 'Auditoria de ' . escape($targetUser['name']) . ' - Brooks Construtora Helpdesk'; $currentPage = 'users'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 

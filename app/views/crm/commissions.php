@@ -48,9 +48,9 @@
     ?>
     <div class="row row-cols-2 row-cols-md-3 g-3 mb-3">
         <div class="col">
-            <div class="card stat-card h-100" style="border-left-color:#00BFA6">
+            <div class="card stat-card h-100" style="border-left-color:#4a90d9">
                 <div class="stat-label"><?= !empty($isComercial) ? 'Total a receber (mês)' : 'Total a pagar (mês)' ?></div>
-                <div class="stat-value" style="color:#00997D;font-size:1.2rem;">R$ <?= number_format($totalCommission, 2, ',', '.') ?></div>
+                <div class="stat-value" style="color:#2c4a6e;font-size:1.2rem;">R$ <?= number_format($totalCommission, 2, ',', '.') ?></div>
             </div>
         </div>
         <div class="col">

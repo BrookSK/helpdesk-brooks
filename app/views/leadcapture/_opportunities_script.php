@@ -1,6 +1,6 @@
 <style>
 .opp-card { border-radius: 10px; margin-bottom: 10px; border-left: 4px solid #dee2e6; }
-.opp-card.st-nova { border-left-color: var(--primary); background: #f0faf8; }
+.opp-card.st-nova { border-left-color: var(--primary); background: #eef4fb; }
 .opp-card.st-vista { border-left-color: #adb5bd; }
 .opp-card.st-convertida { border-left-color: #2e7d32; }
 .opp-card.st-ignorada { opacity: .6; }

@@ -20,7 +20,7 @@ SELECT 'email', 'ON Solu · Triagem Sem Interesse (Remoção)', 'Entendido, {{pr
 WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · Triagem Sem Interesse (Remoção)');
 INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'ON Solu · Triagem Interesse (Positivo) WA', NULL,
-'{{primeiro_nome}}, que ótimo! Um especialista da ON Solutions entra em contato para falar sobre a {{empresa}}.'
+'{{primeiro_nome}}, que ótimo! Um especialista da Brooks Construtora entra em contato para falar sobre a {{empresa}}.'
 WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · Triagem Interesse (Positivo) WA');
 INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'ON Solu · Triagem Sem Interesse (Remoção) WA', NULL,

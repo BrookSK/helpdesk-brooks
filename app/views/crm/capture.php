@@ -115,7 +115,7 @@
                     </div>
                     <div class="col-sm-5">
                         <label class="form-label small mb-1">Termo de busca (opcional)</label>
-                        <input type="text" class="form-control form-control-sm" id="trace-q" placeholder="ex.: engenheiro, nubank, on solutions…">
+                        <input type="text" class="form-control form-control-sm" id="trace-q" placeholder="ex.: engenheiro, nubank, construtora…">
                     </div>
                     <div class="col-sm-2">
                         <label class="form-label small mb-1">Qtd.</label>

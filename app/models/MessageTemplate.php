@@ -94,7 +94,7 @@ class MessageTemplate
     {
         static $cached = null;
         if ($cached !== null) return $cached;
-        $cached = 'ON Solutions Brasil';
+        $cached = 'Brooks Construtora Brasil';
         try {
             // Busca ambos e prioriza prospecting_sender_name.
             $rows = Database::getInstance()->fetchAll(

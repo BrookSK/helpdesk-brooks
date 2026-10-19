@@ -39,7 +39,7 @@ INSERT INTO message_templates (channel, name, subject, body)
 SELECT 'whatsapp', 'ON Solu · Triagem Interesse (Positivo) WA', NULL,
 '{{primeiro_nome}}, que ótimo! Obrigado pelo retorno.
 
-Vou organizar as próximas informações e um especialista da ON Solutions entra em contato para entender melhor o cenário da {{empresa}} e sugerir os próximos passos.'
+Vou organizar as próximas informações e um especialista da Brooks Construtora entra em contato para entender melhor o cenário da {{empresa}} e sugerir os próximos passos.'
 WHERE NOT EXISTS (SELECT 1 FROM message_templates WHERE name = 'ON Solu · Triagem Interesse (Positivo) WA');
 
 INSERT INTO message_templates (channel, name, subject, body)

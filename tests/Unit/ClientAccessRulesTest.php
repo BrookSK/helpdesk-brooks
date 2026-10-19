@@ -71,10 +71,10 @@ final class ClientAccessRulesTest extends TestCase
 
     public function testClientWhatsappContemPinEEmpresa(): void
     {
-        $msg = ClientAccessRules::clientWhatsapp('João', '4821', 'ON Solutions', 'https://app/x');
+        $msg = ClientAccessRules::clientWhatsapp('João', '4821', 'Brooks Construtora', 'https://app/x');
         $this->assertStringContainsString('João', $msg);
         $this->assertStringContainsString('4821', $msg);
-        $this->assertStringContainsString('ON Solutions', $msg);
+        $this->assertStringContainsString('Brooks Construtora', $msg);
         $this->assertStringContainsString('https://app/x', $msg);
     }
 

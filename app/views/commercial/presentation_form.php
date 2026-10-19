@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Apresentação - ON Solutions Helpdesk'; $currentPage = 'presentations'; ?>
+<?php $pageTitle = 'Apresentação - Brooks Construtora Helpdesk'; $currentPage = 'presentations'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 <?php $isPublished = $presentation['status'] === 'published'; ?>
@@ -6,7 +6,7 @@
     /* Cartão de seção */
     .sec { border:1px solid #e6e8f0; border-radius:10px; background:#fff; margin-bottom:8px; transition:box-shadow .15s; }
     .sec:hover { box-shadow:0 2px 10px rgba(30,40,90,.07); }
-    .sec.open { border-color:#00BFA6; box-shadow:0 4px 16px rgba(0,191,166,.15); }
+    .sec.open { border-color:#4a90d9; box-shadow:0 4px 16px rgba(74,144,217,.15); }
     .sec.is-hidden { background:#fafafa; }
     .sec.is-hidden .sec-main { opacity:.5; }
     .sec-head { display:flex; align-items:center; gap:12px; padding:10px 12px; cursor:pointer; }

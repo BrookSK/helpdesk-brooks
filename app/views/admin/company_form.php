@@ -1,4 +1,4 @@
-<?php $pageTitle = ($editCompany ? 'Editar' : 'Nova') . ' Empresa - ON Solutions Helpdesk'; $currentPage = 'companies'; ?>
+<?php $pageTitle = ($editCompany ? 'Editar' : 'Nova') . ' Empresa - Brooks Construtora Helpdesk'; $currentPage = 'companies'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 

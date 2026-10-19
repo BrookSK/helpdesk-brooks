@@ -540,10 +540,10 @@ class SettingsController extends Controller
         }
 
         $toEmail = $adminEmail ?: $fromEmail;
-        $subject = 'Teste de Email - ON Solutions Helpdesk';
+        $subject = 'Teste de Email - Brooks Construtora Helpdesk';
         $body = Mailer::template(
             'Teste de Email',
-            '<p>Este é um email de teste enviado pelo sistema ON Solutions Helpdesk.</p>
+            '<p>Este é um email de teste enviado pelo sistema Brooks Construtora Helpdesk.</p>
              <p>Se você está recebendo este email, a configuração SMTP está funcionando corretamente!</p>
              <p style="font-size:0.8rem;color:#999;">Enviado em: ' . date('d/m/Y H:i:s') . '</p>'
         );
@@ -675,7 +675,7 @@ class SettingsController extends Controller
             'contact_email' => trim($_POST['contact_email'] ?? '') ?: null,
             'site' => trim($_POST['site'] ?? '') ?: null,
             'tagline' => trim($_POST['tagline'] ?? '') ?: null,
-            'color' => trim($_POST['color'] ?? '') ?: '#00997D',
+            'color' => trim($_POST['color'] ?? '') ?: '#2c4a6e',
             'is_active' => !empty($_POST['is_active']) ? 1 : 0,
         ];
 

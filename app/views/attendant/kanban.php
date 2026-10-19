@@ -1,4 +1,4 @@
-﻿<?php $pageTitle = 'Kanban - ON Solutions Helpdesk'; $currentPage = 'kanban'; ?>
+﻿<?php $pageTitle = 'Kanban - Brooks Construtora Helpdesk'; $currentPage = 'kanban'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -117,8 +117,8 @@ function updateColumnCounts() {
 <style>
 .kanban-ghost {
     opacity: 0.4;
-    background: var(--primary-50, #E0F7F4) !important;
-    border: 2px dashed var(--primary, #00BFA6) !important;
+    background: var(--primary-50, #eaf2fb) !important;
+    border: 2px dashed var(--primary, #4a90d9) !important;
 }
 .kanban-drag {
     box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;

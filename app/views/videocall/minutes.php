@@ -1,5 +1,5 @@
 <?php
-$appName = htmlspecialchars((string) Config::get('app_name') ?: 'ON Solutions', ENT_QUOTES);
+$appName = htmlspecialchars((string) Config::get('app_name') ?: 'Brooks Construtora', ENT_QUOTES);
 $logo = Config::get('app_logo');
 $fav = Config::get('app_favicon');
 $title = htmlspecialchars(($room['title'] ?? 'Minuta da reunião') ?: 'Minuta da reunião', ENT_QUOTES);
@@ -28,7 +28,7 @@ $recTk      = htmlspecialchars((string)($rec['token'] ?? ''), ENT_QUOTES);
         * { box-sizing: border-box; }
         body { margin:0; background:#f3f4f8; color:#1b1d2a; font-family:'Segoe UI',system-ui,Arial,sans-serif; }
         .sheet { max-width:820px; margin:24px auto; background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.08); overflow:hidden; }
-        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #00BFA6; }
+        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #4a90d9; }
         .hd img { max-height:46px; }
         .hd .co { font-size:1.15rem; font-weight:700; color:#0f1020; }
         .hd .sp { flex:1; }
@@ -43,8 +43,8 @@ $recTk      = htmlspecialchars((string)($rec['token'] ?? ''), ENT_QUOTES);
         .bd pre { white-space:pre-wrap; font-family:inherit; }
         .ft { padding:16px 32px; border-top:1px solid #e6e8f0; font-size:.78rem; color:#6b7088; text-align:center; }
         .bar { max-width:820px; margin:0 auto 0; padding:12px 8px; display:flex; justify-content:flex-end; gap:8px; }
-        .btn { background:#00BFA6; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:.9rem; cursor:pointer; text-decoration:none; }
-        .btn:hover { background:#009e88; }
+        .btn { background:#4a90d9; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:.9rem; cursor:pointer; text-decoration:none; }
+        .btn:hover { background:#2c4a6e; }
         .btn-sec { background:#eef0f6; color:#444a63; }
         .btn-sec:hover { background:#e2e5ef; }
         .ack { max-width:820px; margin:16px auto 32px; background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.08); padding:22px 32px; }

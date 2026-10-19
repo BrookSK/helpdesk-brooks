@@ -221,7 +221,7 @@ class PresentationController extends Controller
     {
         $vars = [
             'cliente' => trim((string)($presentation['client_name'] ?? '')) ?: 'sua empresa',
-            'empresa' => trim((string) Config::get('app_name')) ?: 'ON Solutions',
+            'empresa' => trim((string) Config::get('app_name')) ?: 'Brooks Construtora',
         ];
         $sections = $this->model->sections($presentation);
         if (!$isPreview) {

@@ -84,7 +84,7 @@ class ClientAccessRules
         $html .= "<p>Seu acesso ao sistema foi criado. Em outro e-mail enviamos o link para você definir a sua senha.</p>";
         $html .= "<p>Para um acesso rápido, você também pode entrar com o seu <strong>PIN</strong>:</p>";
         $html .= "<p style='text-align:center;margin:20px 0;'>"
-               . "<span style='display:inline-block;background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;"
+               . "<span style='display:inline-block;background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;"
                . "font-weight:700;font-size:1.4rem;letter-spacing:4px;'>" . htmlspecialchars($pin) . "</span></p>";
         if ($loginUrl) {
             $safeUrl = htmlspecialchars($loginUrl);

@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Acessos - ON Solutions Helpdesk'; $currentPage = 'acessos'; ?>
+<?php $pageTitle = 'Acessos - Brooks Construtora Helpdesk'; $currentPage = 'acessos'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -11,7 +11,7 @@ ksort($grouped);
 
 // Mapa categoria → [ícone, cor de fundo, cor do ícone]
 $catStyles = [
-    'Geral'         => ['icon' => 'bi-key-fill',        'bg' => '#E0F7F4', 'color' => '#00BFA6'],
+    'Geral'         => ['icon' => 'bi-key-fill',        'bg' => '#eaf2fb', 'color' => '#4a90d9'],
     'Servidor'      => ['icon' => 'bi-hdd-rack',        'bg' => '#FFF3E0', 'color' => '#F57C00'],
     'Hospedagem'    => ['icon' => 'bi-cloud-fill',      'bg' => '#E3F2FD', 'color' => '#1565C0'],
     'Email'         => ['icon' => 'bi-envelope-fill',   'bg' => '#FCE4EC', 'color' => '#C62828'],
@@ -22,7 +22,7 @@ $catStyles = [
     'ERP'           => ['icon' => 'bi-building-gear',   'bg' => '#ECEFF1', 'color' => '#546E7A'],
     'VPN'           => ['icon' => 'bi-shield-fill',     'bg' => '#FBE9E7', 'color' => '#BF360C'],
 ];
-$defaultStyle = ['icon' => 'bi-key-fill', 'bg' => '#E0F7F4', 'color' => '#00BFA6'];
+$defaultStyle = ['icon' => 'bi-key-fill', 'bg' => '#eaf2fb', 'color' => '#4a90d9'];
 
 function catStyle(string $cat, array $map, array $default): array {
     return $map[$cat] ?? $default;
@@ -43,8 +43,8 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
 }
 .vault-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,191,166,.13) !important;
-    border-color: #B2F2E8 !important;
+    box-shadow: 0 8px 24px rgba(74,144,217,.13) !important;
+    border-color: #3d6b9f !important;
 }
 .vault-cat-badge {
     display: inline-flex;
@@ -72,9 +72,9 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
     white-space: nowrap;
 }
 .vault-action-btn:hover {
-    background: #E0F7F4;
-    border-color: #00BFA6;
-    color: #00997D;
+    background: #eaf2fb;
+    border-color: #4a90d9;
+    color: #2c4a6e;
 }
 .vault-action-btn.key-btn:hover {
     background: #FFF3E0;
@@ -82,9 +82,9 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
     color: #E65100;
 }
 .vault-action-btn.copied {
-    background: #E0F7F4;
-    border-color: #00BFA6;
-    color: #00997D;
+    background: #eaf2fb;
+    border-color: #4a90d9;
+    color: #2c4a6e;
 }
 .section-divider {
     display: flex;
@@ -120,14 +120,14 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
 .reveal-bar {
     height: 4px;
     border-radius: 2px;
-    background: #E0F7F4;
+    background: #eaf2fb;
     overflow: hidden;
     margin-top: 8px;
     display: none;
 }
 .reveal-bar-inner {
     height: 100%;
-    background: var(--primary, #00BFA6);
+    background: var(--primary, #4a90d9);
     transition: width 1s linear;
 }
 </style>
@@ -139,8 +139,8 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
         <div>
             <h5 class="mb-0">
                 <span class="rounded-2 d-inline-flex align-items-center justify-content-center me-2"
-                      style="width:32px;height:32px;background:#E0F7F4;vertical-align:middle;">
-                    <i class="bi bi-shield-lock-fill" style="color:#00BFA6;font-size:1rem;"></i>
+                      style="width:32px;height:32px;background:#eaf2fb;vertical-align:middle;">
+                    <i class="bi bi-shield-lock-fill" style="color:#4a90d9;font-size:1rem;"></i>
                 </span>
                 Acessos
             </h5>
@@ -159,14 +159,14 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
     <?php if (empty($accesses)): ?>
     <div class="d-flex flex-column align-items-center justify-content-center py-5 text-center" style="min-height:55vh;">
         <div class="rounded-circle d-flex align-items-center justify-content-center mb-4"
-             style="width:96px;height:96px;background:linear-gradient(135deg,#E0F7F4,#B2F2E8);">
-            <i class="bi bi-shield-lock-fill" style="font-size:2.6rem;color:#00BFA6;"></i>
+             style="width:96px;height:96px;background:linear-gradient(135deg,#eaf2fb,#3d6b9f);">
+            <i class="bi bi-shield-lock-fill" style="font-size:2.6rem;color:#4a90d9;"></i>
         </div>
         <h5 class="fw-semibold mb-2">Nenhum acesso cadastrado ainda</h5>
         <p class="text-muted mb-4" style="max-width:400px;line-height:1.6;">
             Guarde aqui logins e senhas de sistemas — CRM, hospedagem,
             e‑mail corporativo, banco de dados e mais.<br>
-            <strong style="color:#00BFA6;">Criptografadas</strong> e visíveis somente para você.
+            <strong style="color:#4a90d9;">Criptografadas</strong> e visíveis somente para você.
         </p>
         <button class="btn btn-primary px-4" id="btn-novo-acesso-empty">
             <i class="bi bi-plus-lg me-1"></i> Cadastrar primeiro acesso
@@ -309,11 +309,11 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
 <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvasAcesso" style="width:min(440px,100%);">
 
     <!-- Header do offcanvas com cor dinâmica -->
-    <div class="offcanvas-header" id="offcanvas-header" style="border-bottom:3px solid #00BFA6;padding-bottom:12px;">
+    <div class="offcanvas-header" id="offcanvas-header" style="border-bottom:3px solid #4a90d9;padding-bottom:12px;">
         <div class="d-flex align-items-center gap-3">
             <div id="detail-icon-wrap" class="rounded-3 d-flex align-items-center justify-content-center"
-                 style="width:42px;height:42px;background:#E0F7F4;flex-shrink:0;">
-                <i id="detail-icon" class="bi bi-key-fill" style="font-size:1.2rem;color:#00BFA6;"></i>
+                 style="width:42px;height:42px;background:#eaf2fb;flex-shrink:0;">
+                <i id="detail-icon" class="bi bi-key-fill" style="font-size:1.2rem;color:#4a90d9;"></i>
             </div>
             <div>
                 <h6 class="mb-0 fw-semibold" id="offcanvas-title">Detalhes do Acesso</h6>
@@ -337,7 +337,7 @@ $catSectionColors = array_map(fn($s) => $s['color'], $catStyles);
                         <div class="d-flex align-items-center gap-2">
                             <a id="detail-url" href="#" target="_blank" rel="noopener"
                                class="offcanvas-field-value text-decoration-none"
-                               style="color:#00BFA6;"></a>
+                               style="color:#4a90d9;"></a>
                             <button class="vault-action-btn ms-auto flex-shrink-0"
                                     onclick="copyText(document.getElementById('detail-url').textContent.trim(), this)">
                                 <i class="bi bi-copy"></i> Copiar
@@ -677,10 +677,10 @@ function openNew() {
     currentId = null;
     clearReveal();
     document.getElementById('offcanvas-title').textContent = 'Novo Acesso';
-    document.getElementById('offcanvas-header').style.borderBottomColor = '#00BFA6';
-    document.getElementById('detail-icon-wrap').style.background = '#E0F7F4';
+    document.getElementById('offcanvas-header').style.borderBottomColor = '#4a90d9';
+    document.getElementById('detail-icon-wrap').style.background = '#eaf2fb';
     const icon = document.getElementById('detail-icon');
-    icon.className = 'bi bi-key-fill'; icon.style.color = '#00BFA6';
+    icon.className = 'bi bi-key-fill'; icon.style.color = '#4a90d9';
     document.getElementById('detail-category').textContent = '';
     resetForm();
     document.getElementById('pw-hint').style.display = 'none';
@@ -788,12 +788,12 @@ function togglePwdVisibility() {
 
 function showToast(msg, type = 'success') {
     const icons = { success: 'bi-check-circle-fill', danger: 'bi-x-circle-fill', warning: 'bi-exclamation-triangle-fill' };
-    const colors = { success: '#00BFA6', danger: '#dc3545', warning: '#f57c00' };
+    const colors = { success: '#4a90d9', danger: '#dc3545', warning: '#f57c00' };
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;min-width:260px;max-width:360px;';
     wrap.innerHTML = `<div class="d-flex align-items-center gap-2 p-3 rounded-3 shadow"
-        style="background:#fff;border-left:4px solid ${colors[type]||'#00BFA6'};font-size:0.85rem;">
-        <i class="bi ${icons[type]||'bi-info-circle'}" style="color:${colors[type]||'#00BFA6'};font-size:1rem;flex-shrink:0;"></i>
+        style="background:#fff;border-left:4px solid ${colors[type]||'#4a90d9'};font-size:0.85rem;">
+        <i class="bi ${icons[type]||'bi-info-circle'}" style="color:${colors[type]||'#4a90d9'};font-size:1rem;flex-shrink:0;"></i>
         <span class="flex-grow-1">${msg}</span>
         <button onclick="this.closest('[style]').remove()" style="background:none;border:none;cursor:pointer;color:#aaa;font-size:1rem;">×</button>
     </div>`;

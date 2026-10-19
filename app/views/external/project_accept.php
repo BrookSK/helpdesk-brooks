@@ -4,7 +4,7 @@
  * Acessada pelo cliente via link com token. Confirmação autenticada por PIN
  * (client_pin, 4 dígitos). Sem login de sessão.
  */
-$appName = htmlspecialchars((string) Config::get('app_name') ?: 'ON Solutions', ENT_QUOTES);
+$appName = htmlspecialchars((string) Config::get('app_name') ?: 'Brooks Construtora', ENT_QUOTES);
 $logo    = Config::get('app_logo');
 $tk      = htmlspecialchars($token, ENT_QUOTES);
 $pname   = htmlspecialchars($project['name'] ?? 'Projeto', ENT_QUOTES);
@@ -21,7 +21,7 @@ $cname   = htmlspecialchars($project['company_name'] ?? '', ENT_QUOTES);
         * { box-sizing:border-box; }
         body { margin:0; background:#f3f4f8; color:#1b1d2a; font-family:'Segoe UI',system-ui,Arial,sans-serif; }
         .sheet { max-width:560px; margin:24px auto; background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.08); overflow:hidden; }
-        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #00BFA6; }
+        .hd { display:flex; align-items:center; gap:14px; padding:22px 32px; border-bottom:3px solid #4a90d9; }
         .hd img { max-height:46px; } .hd .co { font-size:1.15rem; font-weight:700; }
         .bd { padding:28px 32px; }
         .bd h1 { font-size:1.3rem; margin:.2em 0 .6em; }
@@ -30,7 +30,7 @@ $cname   = htmlspecialchars($project['company_name'] ?? '', ENT_QUOTES);
         label { display:block; font-size:.85rem; color:#6b7088; margin-bottom:6px; }
         input[type=text] { width:100%; border:1px solid #cfd3e2; border-radius:8px; padding:12px; font-size:1.2rem; letter-spacing:.3em; text-align:center; }
         .btn { border:none; border-radius:8px; padding:12px 18px; font-size:.98rem; cursor:pointer; width:100%; margin-top:16px; }
-        .btn-ok { background:#00BFA6; color:#fff; }
+        .btn-ok { background:#4a90d9; color:#fff; }
         .ft { padding:16px 32px; border-top:1px solid #e6e8f0; font-size:.78rem; color:#6b7088; text-align:center; }
         .info { background:#f7f8fc; border-radius:8px; padding:12px 14px; font-size:.88rem; margin-bottom:16px; }
     </style>

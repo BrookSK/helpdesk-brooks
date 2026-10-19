@@ -164,7 +164,7 @@ class EmailProspection
     }
 
     /**
-     * Anexa a assinatura padrão da ON Solutions ao corpo, de forma idempotente.
+     * Anexa a assinatura padrão da Brooks Construtora ao corpo, de forma idempotente.
      * Se o corpo já contém o marcador da assinatura (data-onsolu-signature),
      * não adiciona de novo — evita duplicidade quando algum fluxo já a inclui.
      */

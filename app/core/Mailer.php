@@ -15,7 +15,7 @@ class Mailer
     {
         $body = (string) $htmlBody;
         if (strpos($body, 'data-onsolu-signature') !== false) return $body;
-        if (strpos($body, 'ON Solutions Helpdesk') !== false) return $body; // template institucional
+        if (strpos($body, 'Brooks Construtora Helpdesk') !== false) return $body; // template institucional
         try {
             return $body . EmailMessageService::signatureHtml();
         } catch (\Throwable $e) {
@@ -30,7 +30,7 @@ class Mailer
         $user = Config::get('smtp_username');
         $pass = Config::get('smtp_password');
         $encryption = Config::get('smtp_encryption', 'tls');
-        $fromName = Config::get('smtp_from_name', 'ON Solutions Helpdesk');
+        $fromName = Config::get('smtp_from_name', 'Brooks Construtora Helpdesk');
         $fromEmail = Config::get('smtp_from_email');
 
         if (empty($host) || empty($fromEmail)) {
@@ -172,7 +172,7 @@ class Mailer
                 <div style='text-align:center;margin-bottom:20px;'>
                     {$logoHtml}
                     <div>
-                        <span style='font-family:{$font};color:#00BFA6;font-weight:700;font-size:1.4rem;'>ON</span>
+                        <span style='font-family:{$font};color:#4a90d9;font-weight:700;font-size:1.4rem;'>ON</span>
                         <span style='font-family:{$font};font-weight:600;font-size:1.1rem;color:#000;'> SOLUTIONS</span>
                     </div>
                     <div style='font-family:{$font};font-size:0.8rem;color:#999;margin-top:4px;'>Helpdesk</div>
@@ -182,7 +182,7 @@ class Mailer
                     {$bodyContent}
                 </div>
                 <hr style='border:none;border-top:1px solid #eee;margin:25px 0 15px;'>
-                <p style='font-family:{$font};color:#aaa;font-size:0.75rem;text-align:center;margin:0;'>ON Solutions Helpdesk &copy; {$year}</p>
+                <p style='font-family:{$font};color:#aaa;font-size:0.75rem;text-align:center;margin:0;'>Brooks Construtora Helpdesk &copy; {$year}</p>
             </div>
         </body>
         </html>";

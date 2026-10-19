@@ -36,12 +36,12 @@
     }
     /* Selecionado */
     .mt-mode-input:checked + .mt-mode-card {
-        border-color: var(--primary, #00BFA6);
-        background: #f2fbf9;
-        color: #0b7f70;
-        box-shadow: 0 2px 10px rgba(0, 191, 166, 0.15);
+        border-color: var(--primary, #4a90d9);
+        background: #eef4fb;
+        color: #1e3a5f;
+        box-shadow: 0 2px 10px rgba(74, 144, 217, 0.15);
     }
-    .mt-mode-input:checked + .mt-mode-card i { color: var(--primary, #00BFA6); }
+    .mt-mode-input:checked + .mt-mode-card i { color: var(--primary, #4a90d9); }
     /* Desabilitado (ex.: Google não configurado) */
     .mt-mode-input:disabled + .mt-mode-card {
         opacity: 0.5;
@@ -50,7 +50,7 @@
     }
     /* Foco por teclado (acessibilidade) */
     .mt-mode-input:focus-visible + .mt-mode-card {
-        outline: 2px solid var(--primary, #00BFA6);
+        outline: 2px solid var(--primary, #4a90d9);
         outline-offset: 2px;
     }
     @media (max-width: 575.98px) {
@@ -86,7 +86,7 @@
         text-overflow: ellipsis;
     }
     .mt-combo-item:hover,
-    .mt-combo-item.active { background: #f2fbf9; color: #0b7f70; }
+    .mt-combo-item.active { background: #eef4fb; color: #1e3a5f; }
     .mt-combo-item.selected { font-weight: 600; }
     .mt-combo-empty {
         padding: 8px 10px;

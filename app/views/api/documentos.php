@@ -8,15 +8,15 @@
  *  - Callback de mudança de status (ApiCallbackService).
  *
  * Página standalone (sem login) com navegação própria, mas com estética
- * "irmã" do painel do Helpdesk: mesmas variáveis de cor (--primary #00BFA6,
- * sidebar #1a1a2e), mesma fonte (Inter), mesmos cards (radius 12 + sombra
+ * "irmã" do painel do Helpdesk: mesmas variáveis de cor (--primary #4a90d9,
+ * sidebar #1a2332), mesma fonte (Inter), mesmos cards (radius 12 + sombra
  * suave) e o mesmo tratamento de nav-link da sidebar interna.
  *
  * Variáveis esperadas (fornecidas por ApiController::documentos):
  *   $appName, $faviconUrl, $logoUrl, $base, $apiBase, $keyPrefix
  */
 $apiBase    = isset($apiBase) ? $apiBase : '';
-$appName    = isset($appName) ? $appName : 'ON Solutions Helpdesk';
+$appName    = isset($appName) ? $appName : 'Brooks Construtora Helpdesk';
 $keyPrefix  = isset($keyPrefix) ? $keyPrefix : 'hk_live_';
 $logoUrl    = isset($logoUrl) ? $logoUrl : '';
 $base       = isset($base) ? $base : '';
@@ -37,10 +37,10 @@ $ticketsUrl = $apiBase . '/api/v1/tickets';
     <style>
         /* Mesmas variáveis do painel (layouts/header.php) */
         :root {
-            --primary: #00BFA6;
-            --primary-dark: #00997D;
-            --primary-50: #E0F7F4;
-            --sidebar-bg: #1a1a2e;
+            --primary: #4a90d9;
+            --primary-dark: #2c4a6e;
+            --primary-50: #eaf2fb;
+            --sidebar-bg: #1a2332;
             --sidebar-width: 260px;
         }
         * { box-sizing: border-box; }
@@ -83,7 +83,7 @@ $ticketsUrl = $apiBase . '/api/v1/tickets';
         }
         .doc-nav a i { width: 20px; font-size: 1rem; }
         .doc-nav a:hover, .doc-nav a.active {
-            background: rgba(0, 191, 166, 0.15);
+            background: rgba(74, 144, 217, 0.15);
             color: var(--primary);
             text-decoration: none;
         }
@@ -161,7 +161,7 @@ $ticketsUrl = $apiBase . '/api/v1/tickets';
             <?php if (!empty($logoUrl)): ?>
             <img src="<?= htmlspecialchars($base . $logoUrl) ?>" alt="Logo">
             <?php else: ?>
-            <span class="logo-text">ON</span><span class="text-white fw-light"> Solutions</span>
+            <span class="logo-text">BROOKS</span><span class="text-white fw-light"> Construtora</span>
             <?php endif; ?>
             <div class="brand-sub">API &middot; v1</div>
         </div>

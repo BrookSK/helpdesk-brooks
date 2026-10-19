@@ -6,11 +6,11 @@
 $statusMeta = [
     'dialing'   => ['Discando', '#6c757d'],
     'ringing'   => ['Tocando', '#f59e0b'],
-    'answered'  => ['Atendida', '#00997D'],
+    'answered'  => ['Atendida', '#2c4a6e'],
     'ended'     => ['Encerrada', '#3b82f6'],
 ];
 $dirMeta = [
-    'outbound' => ['Saída', 'bi-telephone-outbound', '#00997D'],
+    'outbound' => ['Saída', 'bi-telephone-outbound', '#2c4a6e'],
     'inbound'  => ['Entrada', 'bi-telephone-inbound', '#1565c0'],
 ];
 $fmtDur = function($s) {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Definir PIN de acesso - ON Solutions Helpdesk</title>
+    <title>Definir PIN de acesso - Brooks Construtora Helpdesk</title>
     <?php $faviconUrl = Config::get('app_favicon'); if ($faviconUrl): ?>
     <link rel="icon" href="<?= baseUrl($faviconUrl) ?>">
     <?php endif; ?>
@@ -11,12 +11,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #00BFA6; --primary-dark: #00997D; }
-        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        :root { --primary: #4a90d9; --primary-dark: #2c4a6e; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #1a2332 0%, #16213e 50%, #0f3460 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .ext-card { background: #fff; border-radius: 20px; padding: 35px 30px; width: 100%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .logo-text { color: var(--primary); font-weight: 700; font-size: 2rem; }
         .pin-input { border-radius: 12px; padding: 14px 15px; border: 2px solid #e8e8e8; font-size: 1.6rem; letter-spacing: 0.5rem; text-align: center; font-weight: 600; }
-        .pin-input:focus { border-color: var(--primary); box-shadow: 0 0 0 0.2rem rgba(0,191,166,0.15); }
+        .pin-input:focus { border-color: var(--primary); box-shadow: 0 0 0 0.2rem rgba(74,144,217,0.15); }
         .btn-ext { background: var(--primary); border-color: var(--primary); border-radius: 10px; padding: 12px; font-weight: 600; }
         .btn-ext:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
     </style>
@@ -28,7 +28,7 @@
             <?php if ($logoUrl): ?>
             <img src="<?= baseUrl($logoUrl) ?>" alt="Logo" style="max-height:50px;margin-bottom:8px;">
             <?php else: ?>
-            <span class="logo-text">ON</span><span class="fs-4 fw-light text-dark"> Solutions</span>
+            <span class="logo-text">BROOKS</span><span class="fs-4 fw-light text-dark"> Construtora</span>
             <?php endif; ?>
             <p class="text-muted mt-2 mb-0" style="font-size:0.9rem"><i class="bi bi-key"></i> Definir PIN de acesso</p>
             <p class="text-muted mb-0" style="font-size:0.8rem">Escolha um PIN de 4 dígitos. Só você verá este valor.</p>
@@ -62,7 +62,7 @@
         </div>
 
         <div class="text-center mt-4">
-            <small class="text-muted" style="font-size:0.75rem">&copy; <?= date('Y') ?> ON Solutions. Todos os direitos reservados.</small>
+            <small class="text-muted" style="font-size:0.75rem">&copy; <?= date('Y') ?> Brooks Construtora. Todos os direitos reservados.</small>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

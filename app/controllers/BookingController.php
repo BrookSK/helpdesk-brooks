@@ -310,11 +310,11 @@ class BookingController extends Controller
         // E-mail para o lead + responsável + admin
         $emailBody = Mailer::template('Reunião confirmada',
             "<p>Olá, <strong>" . htmlspecialchars($name) . "</strong>!</p>
-             <p>Sua reunião com a ON Solutions Brasil foi confirmada:</p>
+             <p>Sua reunião com a Brooks Construtora Brasil foi confirmada:</p>
              <p style='margin:6px 0;'><strong>Assunto:</strong> " . htmlspecialchars($title) . "</p>
              <p style='margin:6px 0;'><strong>Data:</strong> {$whenFmt}</p>"
              . ($meetLink ? "<p style='text-align:center;margin:24px 0;'>
-                    <a href='{$meetLink}' style='background:#00BFA6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>{$meetLabel}</a></p>
+                    <a href='{$meetLink}' style='background:#4a90d9;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>{$meetLabel}</a></p>
                     <p style='font-size:0.8rem;color:#888;word-break:break-all;'>Link: {$meetLink}</p>" : "")
              . "<p>Até breve!</p>");
         foreach (array_values(array_unique(array_filter([$email, $ownerEmail, $admin['email'] ?? null]))) as $to) {
@@ -325,7 +325,7 @@ class BookingController extends Controller
         if ($phone !== '') {
             $first = trim(explode(' ', trim($name))[0] ?? $name);
             $waMsg = "✅ *Reunião confirmada!*\n\n"
-                . "Olá, {$first}! Seu horário com a ON Solutions Brasil está confirmado.\n\n"
+                . "Olá, {$first}! Seu horário com a Brooks Construtora Brasil está confirmado.\n\n"
                 . "🗓️ *Assunto:* {$title}\n"
                 . "🕒 *Data:* {$whenFmt}\n"
                 . ($meetLink ? "🔗 *Link da reunião ({$meetChannel}):*\n{$meetLink}\n" : "")
@@ -372,7 +372,7 @@ class BookingController extends Controller
         if (!$token) {
             $createdBy = (int) ($assignedTo ?: $this->firstSuperAdminId());
             $token = $videoModel->create([
-                'title' => $title ?: 'Reunião com a ON Solutions Brasil',
+                'title' => $title ?: 'Reunião com a Brooks Construtora Brasil',
                 'created_by' => $createdBy ?: null,
                 'meeting_id' => $meetingId,
                 'max_participants' => 15,

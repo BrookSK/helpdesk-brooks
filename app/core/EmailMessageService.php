@@ -28,7 +28,7 @@ class EmailMessageService
      * @return array {success, message_id (local), error}
      */
     /**
-     * Assinatura HTML padrão dos e-mails da ON Solutions Brasil.
+     * Assinatura HTML padrão dos e-mails da Brooks Construtora Brasil.
      * Mesma identidade usada nos envios manuais (logo, nome, contatos).
      * Fonte única para e-mails manuais e de sequência.
      */
@@ -58,7 +58,7 @@ class EmailMessageService
         if (!$sig) return self::signatureHtml($userName); // fallback padrão
 
         $esc = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-        $color = $esc($sig['color'] ?: '#00997D');
+        $color = $esc($sig['color'] ?: '#2c4a6e');
 
         // Logo: usa a da assinatura (upload) ou, se vazia, a logo do sistema.
         $logoHtml = '';
@@ -100,7 +100,7 @@ class EmailMessageService
             $logoPath = Config::get('app_logo');
             if (!empty($logoPath)) {
                 $logoUrl = baseUrl($logoPath);
-                $logoHtml = '<img src="' . htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') . '" alt="ON Solutions Brasil" style="max-height:56px;margin-bottom:8px;">';
+                $logoHtml = '<img src="' . htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') . '" alt="Brooks Construtora Brasil" style="max-height:56px;margin-bottom:8px;">';
             }
         } catch (\Throwable $e) { $logoHtml = ''; }
 
@@ -112,14 +112,14 @@ class EmailMessageService
 <div data-onsolu-signature="1" style="margin-top:28px;padding-top:16px;border-top:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#333;line-height:1.5;">
     ' . $logoHtml . '
     ' . $nameBlock . '
-    <div style="margin-top:6px;">Atenciosamente,<br><strong>Equipe ON Solutions Brasil</strong></div>
+    <div style="margin-top:6px;">Atenciosamente,<br><strong>Equipe Brooks Construtora Brasil</strong></div>
     <div style="color:#666;margin-top:2px;">Tecnologia • Desenvolvimento • Automação</div>
     <div style="margin-top:8px;">
-        📧 <a href="mailto:contato@onsolutionsbrasil.com.br" style="color:#00997D;text-decoration:none;">contato@onsolutionsbrasil.com.br</a><br>
-        🌐 <a href="https://www.onsolutionsbrasil.com.br" style="color:#00997D;text-decoration:none;">www.onsolutionsbrasil.com.br</a>
+        📧 <a href="mailto:contato@onsolutionsbrasil.com.br" style="color:#2c4a6e;text-decoration:none;">contato@onsolutionsbrasil.com.br</a><br>
+        🌐 <a href="https://www.onsolutionsbrasil.com.br" style="color:#2c4a6e;text-decoration:none;">www.onsolutionsbrasil.com.br</a>
     </div>
     <div style="margin-top:8px;color:#888;font-size:12px;">
-        <strong>ON Solutions Brasil</strong><br>
+        <strong>Brooks Construtora Brasil</strong><br>
         Soluções inteligentes para transformar processos e negócios.
     </div>
 </div>';

@@ -12,7 +12,7 @@
 .seq-node { position:absolute; width:190px; background:#fff; border:2px solid #dee2e6; border-radius:10px;
     box-shadow:0 2px 6px rgba(0,0,0,.08); cursor:grab; user-select:none; font-size:0.8rem;
     will-change:transform; transition:box-shadow .1s, border-color .1s; }
-.seq-node.sel { border-color: var(--primary); box-shadow:0 0 0 3px rgba(0,191,166,.2); }
+.seq-node.sel { border-color: var(--primary); box-shadow:0 0 0 3px rgba(74,144,217,.2); }
 .seq-node.linktarget { outline:2px dashed var(--primary); outline-offset:2px; }
 .seq-node .hd { padding:6px 10px; border-bottom:1px solid #eee; font-weight:600; display:flex; justify-content:space-between; align-items:center; border-radius:8px 8px 0 0; }
 .seq-node .hd .x { cursor:pointer; opacity:.4; } .seq-node .hd .x:hover { opacity:1; color:#dc3545; }
@@ -33,7 +33,7 @@
 .n-send .hd{color:#0d6efd} .n-whatsapp .hd{color:#198754} .n-wait .hd{color:#fd7e14} .n-condition .hd{color:#6f42c1}
 .n-tag .hd{color:#20c997} .n-score .hd{color:#e0a800} .n-move .hd{color:#0dcaf0} .n-end .hd{color:#dc3545}
 .n-reveal_phone .hd{color:#212529} .n-ai .hd{color:#0d6efd} .n-unsubscribe .hd{color:#dc3545} .n-schedule .hd{color:#198754} .n-connect .hd{color:#0d6efd} .n-reply .hd{color:#0dcaf0} .n-ai_agent .hd{color:#6f42c1} .n-linkedin .hd{color:#0a66c2}
-#link-hint { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1a1a2e; color:#fff;
+#link-hint { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1a2332; color:#fff;
     padding:8px 16px; border-radius:20px; font-size:0.8rem; z-index:2000; display:none; box-shadow:0 4px 12px rgba(0,0,0,.3); }
 </style>
 
@@ -202,7 +202,7 @@ function drawEdges() {
         const s = svg(); let out = '';
         nodes.forEach(n => {
             const conns = [];
-            if (n.next) conns.push([n.next, '#00BFA6', 0.5, 'bottom']);
+            if (n.next) conns.push([n.next, '#4a90d9', 0.5, 'bottom']);
             if (n.nextYes) conns.push([n.nextYes, '#28a745', 0.26, 'bottom']);
             if (n.nextNo) conns.push([n.nextNo, '#dc3545', 0.66, 'bottom']);
             if (n.nextReply) conns.push([n.nextReply, '#0d6efd', 1, 'right']);
@@ -265,13 +265,13 @@ function defaultData(type) {
     if (type === 'condition') return { kind:'replied' };
     if (type === 'ai') return { mode:'simple', model:'gpt-4o-mini', prompt:'', send_channel:'', save_note:1, faq_active:0, company_info:'', instructions:'', max_turns:6 };
     if (type === 'ai_agent') return { active:1, model:'gpt-4o-mini', company_info:'', instructions:'', max_turns:6 };
-    if (type === 'tag') return { label:'', color:'#00BFA6' };
+    if (type === 'tag') return { label:'', color:'#4a90d9' };
     if (type === 'score') return { delta:3 };
     if (type === 'move') return { column_id:'' };
     if (type === 'unsubscribe') return { reason:'Sem interesse (sequência)' };
-    if (type === 'schedule') return { channel:'auto', duration:45, title:'Reunião com a ON Solutions Brasil', message:'' };
+    if (type === 'schedule') return { channel:'auto', duration:45, title:'Reunião com a Brooks Construtora Brasil', message:'' };
     if (type === 'connect') return { sequence_id:'', stop_current:1 };
-    if (type === 'reply') return { subject:'ON Solutions Brasil', body:'', ai_reply:0, model:'gpt-4o-mini', company_info:'' };
+    if (type === 'reply') return { subject:'Brooks Construtora Brasil', body:'', ai_reply:0, model:'gpt-4o-mini', company_info:'' };
     if (type === 'reveal_phone') return {};
     if (type === 'linkedin') return { action_type:'message', objective:'', body:'', cta:'', tone:'', max_length:0, template_id:'', model:'gpt-4o-mini' };
     return {};
@@ -369,7 +369,7 @@ function renderInspector() {
             <option value="gpt-4.1-mini" ${model==='gpt-4.1-mini'?'selected':''}>gpt-4.1-mini</option>
         </select>`);
         h += `<label class="form-label small mb-1">Informações da empresa (base de conhecimento)</label>` +
-             `<textarea class="form-control form-control-sm" rows="6" placeholder="Ex.: A ON Solutions Brasil faz organização e automação de processos... Setores atendidos... Prazos... Diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
+             `<textarea class="form-control form-control-sm" rows="6" placeholder="Ex.: A Brooks Construtora Brasil faz organização e automação de processos... Setores atendidos... Prazos... Diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
         h += `<label class="form-label small mb-1 mt-2">Instruções extras (tom, regras)</label>` +
              `<textarea class="form-control form-control-sm" rows="3" placeholder="Ex.: Seja cordial e objetivo. Não invente preços. Se perguntarem valores, oriente a agendar." oninput="setData('instructions',this.value)">${escapeHtml(n.data.instructions||'')}</textarea>`;
         if (agentActive) {
@@ -410,7 +410,7 @@ function renderInspector() {
             </select>`);
             if (faqOn) {
                 h += `<label class="form-label small mb-1">Informações da empresa (base de conhecimento)</label>` +
-                     `<textarea class="form-control form-control-sm" rows="5" placeholder="Ex.: A ON Solutions Brasil faz organização e automação de processos... Setores atendidos... Prazos... Diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
+                     `<textarea class="form-control form-control-sm" rows="5" placeholder="Ex.: A Brooks Construtora Brasil faz organização e automação de processos... Setores atendidos... Prazos... Diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
                 h += `<label class="form-label small mb-1 mt-2">Instruções extras (tom, regras)</label>` +
                      `<textarea class="form-control form-control-sm" rows="2" placeholder="Ex.: Seja cordial e objetivo. Não invente preços. Se perguntarem valores, oriente a agendar." oninput="setData('instructions',this.value)">${escapeHtml(n.data.instructions||'')}</textarea>`;
                 h += field('Máx. de interações antes de concluir', `<input type="number" min="1" max="20" class="form-control form-control-sm" value="${n.data.max_turns||6}" oninput="setData('max_turns',parseInt(this.value)||6)">`);
@@ -428,7 +428,7 @@ function renderInspector() {
         const cur = n.data.label || '';
         const known = LABELS.some(l => l.name === cur);
         let opts = '<option value="">— selecione uma etiqueta —</option>';
-        opts += LABELS.map(l => `<option value="${escapeAttr(l.name)}" data-color="${escapeAttr(l.color||'#00BFA6')}" ${l.name===cur?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
+        opts += LABELS.map(l => `<option value="${escapeAttr(l.name)}" data-color="${escapeAttr(l.color||'#4a90d9')}" ${l.name===cur?'selected':''}>${escapeHtml(l.name)}</option>`).join('');
         opts += `<option value="__new__" ${(cur && !known)?'selected':''}>➕ Criar nova etiqueta…</option>`;
         h += field('Etiqueta (CRM)', `<select class="form-select form-select-sm" id="insp-tag-select" onchange="onTagSelect(this)">${opts}</select>`);
         // Campo para nome da nova etiqueta (aparece quando "criar nova")
@@ -437,7 +437,7 @@ function renderInspector() {
             <label class="form-label small mb-1">Nome da nova etiqueta</label>
             <input class="form-control form-control-sm" id="insp-tag-new" value="${showNew?escapeAttr(cur):''}" oninput="setData('label',this.value)" placeholder="Ex: prospecao apollo - Ativa">
         </div>`;
-        h += field('Cor', `<input type="color" class="form-control form-control-sm form-control-color" id="insp-tag-color" value="${escapeAttr(n.data.color||'#00BFA6')}" oninput="setData('color',this.value)">`);
+        h += field('Cor', `<input type="color" class="form-control form-control-sm form-control-color" id="insp-tag-color" value="${escapeAttr(n.data.color||'#4a90d9')}" oninput="setData('color',this.value)">`);
         h += `<small class="text-muted d-block">A etiqueta é criada no CRM (se não existir) e vinculada ao contato.</small>`;
     } else if (n.type==='reveal_phone') {
         const rp = (n.data.reveal_phone === undefined) ? true : !!n.data.reveal_phone;
@@ -472,7 +472,7 @@ function renderInspector() {
             <option value="auto" ${ch==='auto'?'selected':''}>Automático (e-mail e/ou WhatsApp)</option>
             <option value="email" ${ch==='email'?'selected':''}>E-mail</option>
             <option value="whatsapp" ${ch==='whatsapp'?'selected':''}>WhatsApp</option></select>`);
-        h += field('Título da reunião', `<input class="form-control form-control-sm" value="${escapeAttr(n.data.title||'Reunião com a ON Solutions Brasil')}" oninput="setData('title',this.value)">`);
+        h += field('Título da reunião', `<input class="form-control form-control-sm" value="${escapeAttr(n.data.title||'Reunião com a Brooks Construtora Brasil')}" oninput="setData('title',this.value)">`);
         h += field('Duração (min)', `<input type="number" min="15" step="15" class="form-control form-control-sm" value="${n.data.duration||45}" oninput="setData('duration',parseInt(this.value)||45)">`);
         h += `<label class="form-label small mb-1">Mensagem do convite (opcional)</label>` + varChipsHtml() +
              `<textarea id="insp-body" class="form-control form-control-sm" rows="4" placeholder="Ex.: {{primeiro_nome}}, que tal conversarmos? Escolha o melhor horário no link abaixo." oninput="setData('message',this.value)">${escapeHtml(n.data.message||'')}</textarea>`;
@@ -493,10 +493,10 @@ function renderInspector() {
                 <option value="gpt-4.1-mini" ${model==='gpt-4.1-mini'?'selected':''}>gpt-4.1-mini</option>
             </select>`);
             h += `<label class="form-label small mb-1">Informações da empresa (para responder dúvidas)</label>` +
-                 `<textarea class="form-control form-control-sm" rows="4" placeholder="Ex.: O que a ON Solutions faz, como funciona, prazos, diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
+                 `<textarea class="form-control form-control-sm" rows="4" placeholder="Ex.: O que a Brooks Construtora faz, como funciona, prazos, diferenciais..." oninput="setData('company_info',this.value)">${escapeHtml(n.data.company_info||'')}</textarea>`;
             h += `<small class="text-muted d-block mb-2">A IA responde brevemente a dúvida do lead usando estas informações e o histórico, e em seguida acrescenta a mensagem/convite abaixo.</small>`;
         }
-        h += field('Assunto (só e-mail)', `<input class="form-control form-control-sm" value="${escapeAttr(n.data.subject||'ON Solutions Brasil')}" oninput="setData('subject',this.value)">`);
+        h += field('Assunto (só e-mail)', `<input class="form-control form-control-sm" value="${escapeAttr(n.data.subject||'Brooks Construtora Brasil')}" oninput="setData('subject',this.value)">`);
         h += `<label class="form-label small mb-1">Mensagem ${aiReplyOn?'(convite — enviado após a resposta da IA)':''}</label>` + varChipsHtml() +
              `<textarea id="insp-body" class="form-control form-control-sm" rows="5" oninput="setData('body',this.value)">${escapeHtml(n.data.body||'')}</textarea>`;
     } else if (n.type==='connect') {

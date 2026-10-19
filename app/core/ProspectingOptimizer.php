@@ -202,7 +202,7 @@ class ProspectingOptimizer
         $model = trim((string) Config::get('openai_model')) ?: 'gpt-4o-mini';
         $isEmail = ($ctx['channel'] === 'email');
 
-        $system = "Você é um especialista em copywriting de prospecção fria B2B (ON Solutions Brasil), "
+        $system = "Você é um especialista em copywriting de prospecção fria B2B (Brooks Construtora Brasil), "
             . "focado em MAXIMIZAR AGENDAMENTO DE REUNIÕES. Em português do Brasil. "
             . "Receba a mensagem que MELHOR converteu, as objeções que derrubaram leads e o que os interessados disseram. "
             . "Escreva UMA nova variante melhor: mantenha o que funcionou, ataque as objeções de forma sutil, seja "

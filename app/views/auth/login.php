@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - ON Solutions Helpdesk</title>
+    <title>Login - Brooks Construtora Helpdesk</title>
     <?php
     require_once dirname(dirname(__DIR__)) . '/core/helpers.php';
     require_once dirname(dirname(__DIR__)) . '/core/Database.php';
@@ -16,12 +16,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #00BFA6;
-            --primary-dark: #00997D;
+            --primary: #4a90d9;
+            --primary-dark: #2c4a6e;
+            --brooks-navy: #1a2332;
         }
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background: linear-gradient(135deg, #1a2332 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -69,7 +70,7 @@
             color: #fff;
         }
         .btn-pin:focus {
-            box-shadow: 0 0 0 0.2rem rgba(0,191,166,0.25);
+            box-shadow: 0 0 0 0.2rem rgba(74,144,217,0.25);
         }
         .form-control {
             border-radius: 10px;
@@ -79,7 +80,7 @@
         }
         .form-control:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 0.2rem rgba(0,191,166,0.15);
+            box-shadow: 0 0 0 0.2rem rgba(74,144,217,0.15);
         }
         .logo-text {
             color: var(--primary);
@@ -100,10 +101,14 @@
         <div class="text-center mb-4">
             <?php $logoUrl = Config::get('app_logo'); ?>
             <?php if ($logoUrl): ?>
-            <img src="<?= baseUrl($logoUrl) ?>" alt="Logo" style="max-height:50px;margin-bottom:8px;">
+            <?php // A logo da Brooks é branca (fundo transparente); exibimos sobre
+                  // um bloco navy para garantir contraste no card branco do login. ?>
+            <div style="background:var(--brooks-navy,#1a2332);border-radius:14px;padding:16px 22px;display:inline-block;margin-bottom:10px;">
+                <img src="<?= baseUrl($logoUrl) ?>" alt="Logo" style="max-height:46px;max-width:220px;display:block;">
+            </div>
             <?php else: ?>
-            <span class="logo-text">ON</span>
-            <span class="fs-4 fw-light text-dark"> Solutions</span>
+            <span class="logo-text">BROOKS</span>
+            <span class="fs-4 fw-light text-dark"> Construtora</span>
             <?php endif; ?>
             <p class="text-muted mt-2 mb-0" style="font-size:0.88rem">Helpdesk</p>
         </div>
@@ -145,7 +150,7 @@
         </div>
 
         <div class="text-center mt-4">
-            <small class="text-muted" style="font-size:0.75rem">&copy; <?= date('Y') ?> ON Solutions. Todos os direitos reservados.</small>
+            <small class="text-muted" style="font-size:0.75rem">&copy; <?= date('Y') ?> Brooks Construtora. Todos os direitos reservados.</small>
             <div class="mt-2" style="font-size:0.72rem;">
                 <a href="<?= baseUrl('pages/termos') ?>" target="_blank" style="color:#888;text-decoration:none;">Termos de Uso</a>
                 <span class="mx-1" style="color:#ccc;">|</span>

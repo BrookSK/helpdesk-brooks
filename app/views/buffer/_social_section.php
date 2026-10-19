@@ -210,7 +210,7 @@ $linkedinTokenExpired = $linkedinTokenExpired ?? false;
                 </div>
                 <div class="mb-2">
                     <label class="form-label small fw-medium">Nome (opcional)</label>
-                    <input type="text" id="li-name" class="form-control form-control-sm" placeholder="Ex: ON Solutions Brasil">
+                    <input type="text" id="li-name" class="form-control form-control-sm" placeholder="Ex: Brooks Construtora Brasil">
                 </div>
                 <div class="mb-2">
                     <label class="form-label small fw-medium">Access Token (opcional)</label>
@@ -266,9 +266,9 @@ $linkedinTokenExpired = $linkedinTokenExpired ?? false;
 .social-post-cover img { width: 100%; height: 100%; object-fit: cover; }
 .social-post-caption { font-size: 0.72rem; color: #444; padding: 6px 8px 2px; min-height: 34px; }
 .social-post-stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 8px 8px; font-size: 0.68rem; color: #6b7280; }
-.social-post-stats i { color: #00997D; }
+.social-post-stats i { color: #2c4a6e; }
 /* Crescimento de seguidores */
-.followers-growth-section { border: 1px solid #e8f5e9; border-radius: 12px; padding: 12px 14px; background: #fafffe; }
+.followers-growth-section { border: 1px solid #e8f5e9; border-radius: 12px; padding: 12px 14px; background: #fbfdff; }
 .fg-title { font-size: 0.72rem; font-weight: 600; color: #2b7a5e; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 10px; }
 .fg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
 .fg-card { text-align: center; padding: 8px 4px; border-radius: 10px; background: #f0faf6; }

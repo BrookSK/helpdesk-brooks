@@ -38,11 +38,11 @@ $networkInfo = [
 
 /* HERO HEADER */
 .ms-hero {
-    background: linear-gradient(135deg, #e0f7f4 0%, #f0faf8 100%);
+    background: linear-gradient(135deg, #eaf2fb 0%, #eef4fb 100%);
     border-radius: 20px;
     padding: 32px 36px;
     margin-bottom: 28px;
-    color: #1a1a2e;
+    color: #1a2332;
     position: relative;
     overflow: hidden;
     border: 1px solid #c8ede6;
@@ -54,10 +54,10 @@ $networkInfo = [
     right: -10%;
     width: 300px;
     height: 300px;
-    background: radial-gradient(circle, rgba(0,191,166,0.1) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(74,144,217,0.1) 0%, transparent 70%);
     border-radius: 50%;
 }
-.ms-hero h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 6px; color: #1a1a2e; }
+.ms-hero h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 6px; color: #1a2332; }
 .ms-hero p { font-size: 0.9rem; color: #5a6b7b; margin: 0; }
 
 /* ACTION BUTTONS */
@@ -130,7 +130,7 @@ $networkInfo = [
 .ms-kpi:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
 .ms-kpi-accent { position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 16px 16px 0 0; }
 .ms-kpi-icon { font-size: 1.4rem; margin-bottom: 12px; }
-.ms-kpi-value { font-size: 2rem; font-weight: 800; color: #1a1a2e; line-height: 1; }
+.ms-kpi-value { font-size: 2rem; font-weight: 800; color: #1a2332; line-height: 1; }
 .ms-kpi-label { font-size: 0.82rem; color: #6b7280; margin-top: 6px; font-weight: 500; }
 .ms-kpi-change { display: inline-flex; align-items: center; gap: 3px; font-size: 0.75rem; font-weight: 700; margin-top: 10px; padding: 4px 10px; border-radius: 20px; }
 .ms-kpi-change.up { background: #ecfdf5; color: #059669; }
@@ -143,7 +143,7 @@ $networkInfo = [
 .ms-section-title {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: #1a2332;
     margin-bottom: 16px;
     display: flex;
     align-items: center;
@@ -232,7 +232,7 @@ $networkInfo = [
 .ms-net-avatar { width: 54px; height: 54px; border-radius: 14px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
 .ms-net-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; }
 .ms-net-badge { position: absolute; bottom: -3px; right: -3px; width: 22px; height: 22px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; border: 2px solid #fff; }
-.ms-net-name { font-size: 1.05rem; font-weight: 700; color: #1a1a2e; }
+.ms-net-name { font-size: 1.05rem; font-weight: 700; color: #1a2332; }
 .ms-net-handle { font-size: 0.82rem; color: #8a929b; margin-top: 2px; }
 
 /* Métrica principal (destaque) */
@@ -241,11 +241,11 @@ $networkInfo = [
     align-items: center;
     gap: 16px;
     padding: 14px 18px;
-    background: linear-gradient(135deg, #f0faf8, #e8f5f2);
+    background: linear-gradient(135deg, #eef4fb, #e8f5f2);
     border-radius: 12px;
     margin-bottom: 14px;
 }
-.ms-net-highlight-val { font-size: 1.8rem; font-weight: 800; color: #1a1a2e; line-height: 1; }
+.ms-net-highlight-val { font-size: 1.8rem; font-weight: 800; color: #1a2332; line-height: 1; }
 .ms-net-highlight-lbl { font-size: 0.82rem; color: #5a6b7b; font-weight: 500; }
 
 /* Métricas secundárias em grid 2 colunas */
@@ -670,8 +670,8 @@ function renderChart(timeline) {
     const values = timeline.map(t=>parseFloat(t.total));
     if (lineChart) lineChart.destroy();
     const ctx = document.getElementById('lineChart').getContext('2d');
-    const grad = ctx.createLinearGradient(0,0,0,280); grad.addColorStop(0,'rgba(0,191,166,0.18)'); grad.addColorStop(1,'rgba(0,191,166,0)');
-    lineChart = new Chart(document.getElementById('lineChart'),{type:'line',data:{labels,datasets:[{data:values,borderColor:'#00BFA6',borderWidth:2.5,backgroundColor:grad,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:'#00BFA6'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a2e',padding:12,displayColors:false,titleFont:{size:13},bodyFont:{size:14,weight:'600'}}},scales:{y:{beginAtZero:true,grid:{color:'rgba(0,0,0,0.04)'},ticks:{color:'#9aa',font:{size:12}}},x:{grid:{display:false},ticks:{color:'#9aa',font:{size:11},maxRotation:0,autoSkip:true,maxTicksLimit:10}}}}});
+    const grad = ctx.createLinearGradient(0,0,0,280); grad.addColorStop(0,'rgba(74,144,217,0.18)'); grad.addColorStop(1,'rgba(74,144,217,0)');
+    lineChart = new Chart(document.getElementById('lineChart'),{type:'line',data:{labels,datasets:[{data:values,borderColor:'#4a90d9',borderWidth:2.5,backgroundColor:grad,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:'#4a90d9'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a2332',padding:12,displayColors:false,titleFont:{size:13},bodyFont:{size:14,weight:'600'}}},scales:{y:{beginAtZero:true,grid:{color:'rgba(0,0,0,0.04)'},ticks:{color:'#9aa',font:{size:12}}},x:{grid:{display:false},ticks:{color:'#9aa',font:{size:11},maxRotation:0,autoSkip:true,maxTicksLimit:10}}}}});
 }
 function renderTop(top) {
     const box = document.getElementById('top-posts');

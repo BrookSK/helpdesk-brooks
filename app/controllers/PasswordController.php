@@ -76,7 +76,7 @@ class PasswordController extends Controller
             "<p>Olá, <strong>" . htmlspecialchars($user['name']) . "</strong>!</p>
             <p>Recebemos uma solicitação para redefinir sua senha.</p>
             <p style='text-align:center;margin:25px 0;'>
-                <a href='{$resetLink}' style='background:#00BFA6;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
+                <a href='{$resetLink}' style='background:#4a90d9;color:#fff;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;display:inline-block;'>
                     Redefinir Minha Senha
                 </a>
             </p>
@@ -85,7 +85,7 @@ class PasswordController extends Controller
             <p style='font-size:0.78rem;color:#bbb;word-break:break-all;'>Link direto: {$resetLink}</p>"
         );
 
-        Mailer::send($user['email'], 'Redefinição de Senha - ON Solutions Helpdesk', $htmlBody);
+        Mailer::send($user['email'], 'Redefinição de Senha - Brooks Construtora Helpdesk', $htmlBody);
 
         flash('success', 'Se o email estiver cadastrado, você receberá um link para redefinir sua senha.');
         $this->redirect('password/forgot');

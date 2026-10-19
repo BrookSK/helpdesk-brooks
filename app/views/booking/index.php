@@ -8,19 +8,19 @@ $title = htmlspecialchars($link['title'] ?: 'Agende sua reunião', ENT_QUOTES);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <meta name="theme-color" content="#00BFA6">
-    <title>Agendar reunião · ON Solutions Brasil</title>
+    <meta name="theme-color" content="#4a90d9">
+    <title>Agendar reunião · Brooks Construtora Brasil</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        :root { --brand:#00BFA6; --brand-dark:#009e88; --ink:#1f2d3d; --muted:#6b7a90; }
+        :root { --brand:#4a90d9; --brand-dark:#2c4a6e; --ink:#1f2d3d; --muted:#6b7a90; }
         * { -webkit-tap-highlight-color: transparent; }
         body { background:#eef1f6; font-family:'Segoe UI',system-ui,Arial,sans-serif; color:var(--ink); }
 
         .booking-card { max-width:640px; margin:24px auto; background:#fff; border-radius:20px;
             box-shadow:0 10px 40px rgba(16,42,67,.12); overflow:hidden; }
 
-        .booking-hd { position:relative; background:linear-gradient(135deg,#00d4b8,#009e88); color:#fff; padding:28px 26px 26px; }
+        .booking-hd { position:relative; background:linear-gradient(135deg,#00d4b8,#2c4a6e); color:#fff; padding:28px 26px 26px; }
         .booking-hd::after { content:''; position:absolute; right:-40px; top:-40px; width:160px; height:160px;
             background:rgba(255,255,255,.12); border-radius:50%; }
         .brand { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:.82rem;
@@ -38,7 +38,7 @@ $title = htmlspecialchars($link['title'] ?: 'Agende sua reunião', ENT_QUOTES);
 
         .form-label { font-size:.78rem; font-weight:600; color:var(--muted); margin-bottom:4px; }
         .form-control { border-radius:12px; border:1.5px solid #e2e8f0; padding:11px 14px; font-size:.95rem; }
-        .form-control:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(0,191,166,.15); }
+        .form-control:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(74,144,217,.15); }
         .form-control:disabled { background:#f4f6f9; }
 
         .slot-group-label { font-size:.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
@@ -48,13 +48,13 @@ $title = htmlspecialchars($link['title'] ?: 'Agende sua reunião', ENT_QUOTES);
         .slot-btn { border:1.5px solid #dbe3ec; background:#fff; color:var(--ink); border-radius:12px;
             padding:11px 4px; font-size:.92rem; font-weight:600; cursor:pointer; transition:all .12s; text-align:center; }
         .slot-btn:hover { border-color:var(--brand); color:var(--brand-dark); }
-        .slot-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); box-shadow:0 4px 12px rgba(0,191,166,.35); }
+        .slot-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); box-shadow:0 4px 12px rgba(74,144,217,.35); }
 
-        .hint { display:flex; align-items:flex-start; gap:8px; background:#f0fbf9; border:1px solid #cbeee7;
-            color:#0b7d6d; border-radius:12px; padding:10px 12px; font-size:.8rem; }
+        .hint { display:flex; align-items:flex-start; gap:8px; background:#eef4fb; border:1px solid #cfe0f3;
+            color:#1e3a5f; border-radius:12px; padding:10px 12px; font-size:.8rem; }
 
         .btn-confirm { background:var(--brand); border:none; color:#fff; border-radius:14px; padding:14px;
-            font-size:1rem; font-weight:700; width:100%; box-shadow:0 6px 18px rgba(0,191,166,.35); transition:filter .12s; }
+            font-size:1rem; font-weight:700; width:100%; box-shadow:0 6px 18px rgba(74,144,217,.35); transition:filter .12s; }
         .btn-confirm:hover:not(:disabled) { filter:brightness(1.05); }
         .btn-confirm:disabled { background:#c3ccd6; box-shadow:none; cursor:not-allowed; }
 
@@ -77,7 +77,7 @@ $title = htmlspecialchars($link['title'] ?: 'Agende sua reunião', ENT_QUOTES);
 <body>
 <div class="booking-card">
     <div class="booking-hd">
-        <span class="brand"><i class="bi bi-calendar2-check"></i> ON Solutions Brasil</span>
+        <span class="brand"><i class="bi bi-calendar2-check"></i> Brooks Construtora Brasil</span>
         <h1><?= $title ?></h1>
         <div class="sub"><i class="bi bi-camera-video"></i> Reunião online via Google Meet</div>
     </div>

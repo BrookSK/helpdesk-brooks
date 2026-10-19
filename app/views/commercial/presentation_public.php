@@ -1,5 +1,5 @@
 <?php
-$brandName = 'ON Solutions';
+$brandName = 'Brooks Construtora';
 $appName = htmlspecialchars($brandName, ENT_QUOTES);
 $t = fn($text) => PresentationRules::linkify(htmlspecialchars(PresentationRules::applyVars((string)$text, $vars), ENT_QUOTES));
 $p = fn($text) => nl2br($t($text));
@@ -36,7 +36,7 @@ foreach ($sections as $idx => $s) {
             --bg:#07141b; --bg-1:#0a1b23; --bg-2:#0c222b; --panel:rgba(255,255,255,.035); --panel-h:rgba(94,234,212,.06);
             --line:rgba(255,255,255,.08); --line-t:rgba(94,234,212,.22);
             --white:#f2f8f9; --text:#b4c6cb; --muted:#7f979d;
-            --teal:#00bfa6; --teal-2:#14b8a6; --mint:#5eead4; --glow:rgba(0,191,166,.35); --note:#d4ebe7;
+            --teal:#4a90d9; --teal-2:#14b8a6; --mint:#5eead4; --glow:rgba(74,144,217,.35); --note:#d4ebe7;
             --sans:'Inter','Segoe UI',system-ui,Arial,sans-serif; --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
         }
         * { box-sizing:border-box; }
@@ -58,12 +58,12 @@ foreach ($sections as $idx => $s) {
             background-image:linear-gradient(rgba(94,234,212,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(94,234,212,.05) 1px, transparent 1px);
             background-size:64px 64px; mask-image:radial-gradient(ellipse 70% 60% at 50% 40%, #000 0%, transparent 85%); -webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 40%, #000 0%, transparent 85%); }
         .hero::after { content:''; position:absolute; left:50%; top:38%; width:720px; height:720px; transform:translate(-50%,-50%); border-radius:50%; pointer-events:none;
-            background:radial-gradient(circle, rgba(0,191,166,.16) 0%, rgba(0,191,166,0) 65%); }
+            background:radial-gradient(circle, rgba(74,144,217,.16) 0%, rgba(74,144,217,0) 65%); }
         .hero .wrap { position:relative; z-index:1; }
         .hero-brand { display:inline-flex; align-items:center; justify-content:center; gap:30px; margin-bottom:34px; }
         .hero-brand img { width:clamp(72px, 7.5vw, 112px); height:auto; filter:drop-shadow(0 0 34px var(--glow)); }
         .hero h1 { margin:0; font-size:clamp(2.8rem, 6.6vw, 5.6rem); line-height:1.05; font-weight:800; letter-spacing:-.035em; color:#fff; }
-        .kicker { display:inline-block; margin:0 0 30px; padding:9px 22px; border:1px solid var(--line-t); border-radius:999px; background:rgba(0,191,166,.08);
+        .kicker { display:inline-block; margin:0 0 30px; padding:9px 22px; border:1px solid var(--line-t); border-radius:999px; background:rgba(74,144,217,.08);
             font-family:var(--mono); font-size:clamp(.82rem, 1.3vw, 1rem); font-weight:500; color:var(--mint); letter-spacing:.02em; }
         .lead { max-width:820px; margin:0 auto; font-size:clamp(1.05rem, 1.6vw, 1.3rem); line-height:1.7; color:#c5d6da; }
 
@@ -75,7 +75,7 @@ foreach ($sections as $idx => $s) {
             color:var(--white); font-weight:600; font-size:.86rem; line-height:1.35; text-decoration:none; transition:border-color .2s, transform .2s, background .2s; }
         .toc a span { min-width:0; }
         .toc a::before { counter-increment:toc; content:counter(toc, decimal-leading-zero); flex:0 0 auto; font-family:var(--mono); font-size:.8rem; font-weight:700; color:var(--teal); padding-top:1px; }
-        .toc a:hover { border-color:var(--line-t); background:rgba(0,191,166,.08); transform:translateY(-2px); color:#fff; }
+        .toc a:hover { border-color:var(--line-t); background:rgba(74,144,217,.08); transform:translateY(-2px); color:#fff; }
         .scroll-hint { position:absolute; left:50%; bottom:28px; transform:translateX(-50%); z-index:1; width:26px; height:42px; border:1.5px solid rgba(255,255,255,.25); border-radius:14px; }
         .scroll-hint::after { content:''; position:absolute; left:50%; top:8px; width:4px; height:8px; margin-left:-2px; border-radius:2px; background:var(--mint); animation:hint 1.8s infinite; }
         @keyframes hint { 0% { opacity:0; transform:translateY(0); } 40% { opacity:1; } 100% { opacity:0; transform:translateY(14px); } }
@@ -84,13 +84,13 @@ foreach ($sections as $idx => $s) {
         .sec { position:relative; padding:130px 0; background:var(--bg-1); overflow:hidden; }
         .sec.light {
             --white:#0b1a24; --text:#41545b; --muted:#6b7b83; --mint:#0a8f7d; --note:#24534c;
-            --panel:#ffffff; --panel-h:#ecfaf6; --line:#d7e6e4; --line-t:rgba(0,191,166,.45);
+            --panel:#ffffff; --panel-h:#ecfaf6; --line:#d7e6e4; --line-t:rgba(74,144,217,.45);
         }
         .sec::before { content:''; position:absolute; top:8%; right:-220px; width:640px; height:640px; border-radius:50%; pointer-events:none;
-            background:radial-gradient(circle, rgba(0,191,166,.13) 0%, rgba(0,191,166,0) 70%); }
+            background:radial-gradient(circle, rgba(74,144,217,.13) 0%, rgba(74,144,217,0) 70%); }
         .sec:nth-of-type(even)::before { right:auto; left:-220px; }
         .sec.light::after { content:''; position:absolute; inset:0; pointer-events:none; opacity:.35;
-            background-image:linear-gradient(rgba(0,191,166,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,191,166,.06) 1px, transparent 1px);
+            background-image:linear-gradient(rgba(74,144,217,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(74,144,217,.06) 1px, transparent 1px);
             background-size:56px 56px; mask-image:radial-gradient(ellipse 70% 60% at 50% 30%, #000 0%, transparent 80%); -webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 30%, #000 0%, transparent 80%); }
         .sec .wrap { position:relative; z-index:1; }
         .sec.part-start { padding-top:150px; }
@@ -99,7 +99,7 @@ foreach ($sections as $idx => $s) {
         .sec-head:not(:has(.num)) { margin-bottom:18px; }
         .sec-head:not(:has(.num)) h2 { font-size:clamp(1.25rem, 2vw, 1.7rem); font-weight:700; letter-spacing:-.02em; }
         .num { flex:0 0 auto; font-family:var(--sans); font-weight:900; font-size:clamp(2.8rem, 5vw, 4.4rem); line-height:.85; letter-spacing:-.04em;
-            background:linear-gradient(180deg, var(--mint) 0%, rgba(0,191,166,.15) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+            background:linear-gradient(180deg, var(--mint) 0%, rgba(74,144,217,.15) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
         .sec h2 { margin:0; color:var(--white); font-size:clamp(2rem, 4vw, 3.3rem); line-height:1.08; font-weight:800; letter-spacing:-.035em; max-width:1000px; }
         .sec-head + .sub, .sec-head + .body { margin-top:0; }
         .sub { max-width:980px; margin:0 0 22px; font-size:clamp(1.15rem, 1.8vw, 1.4rem); line-height:1.5; font-weight:500; color:var(--mint); }
@@ -150,12 +150,12 @@ foreach ($sections as $idx => $s) {
         .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
         table { width:100%; border-collapse:collapse; font-size:1rem; }
         th { text-align:left; padding:20px 26px; font-family:var(--mono); font-size:.74rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--mint);
-            background:rgba(0,191,166,.08); border-bottom:1px solid var(--line-t); white-space:nowrap; }
+            background:rgba(74,144,217,.08); border-bottom:1px solid var(--line-t); white-space:nowrap; }
         td { padding:20px 26px; border-top:1px solid var(--line); vertical-align:top; color:var(--text); }
         tbody tr:first-child td { border-top:none; }
         td:first-child { font-weight:700; color:var(--white); }
         tbody tr { transition:background .15s; }
-        tbody tr:hover { background:rgba(0,191,166,.05); }
+        tbody tr:hover { background:rgba(74,144,217,.05); }
         table.cmp th:first-child { color:var(--muted); background:rgba(255,255,255,.03); border-bottom-color:var(--line); }
         table.cmp td:first-child { font-weight:400; color:var(--muted); }
         table.cmp td:last-child { color:var(--white); font-weight:600; }
@@ -166,7 +166,7 @@ foreach ($sections as $idx => $s) {
         ul.list li { position:relative; padding:22px 22px 20px 22px; border:1px solid var(--line); border-radius:16px; background:var(--panel); color:var(--white); font-weight:600; font-size:1.05rem; line-height:1.45; transition:transform .2s, border-color .2s, box-shadow .2s; }
         .sec.light ul.list li:hover { transform:translateY(-2px); border-color:var(--line-t); box-shadow:0 10px 24px rgba(10,143,125,.07); }
         ul.list.tight li { padding-top:20px; }
-        ul.list.tight li::before { counter-increment:item; content:counter(item, decimal-leading-zero); display:block; width:fit-content; margin:0 0 12px; padding:4px 10px; border-radius:999px; background:rgba(0,191,166,.12); color:#0a8f7d; font:700 .75rem/1 var(--mono); }
+        ul.list.tight li::before { counter-increment:item; content:counter(item, decimal-leading-zero); display:block; width:fit-content; margin:0 0 12px; padding:4px 10px; border-radius:999px; background:rgba(74,144,217,.12); color:#0a8f7d; font:700 .75rem/1 var(--mono); }
         ul.list:not(.tight):not(.dont) li::before { content:''; position:absolute; left:0; top:18px; bottom:18px; width:3px; border-radius:3px; background:var(--teal); }
         ul.list li small { display:block; color:var(--text); font-weight:400; font-size:.95rem; margin-top:6px; line-height:1.55; }
         ul.list.dont li::before { content:''; position:absolute; left:18px; top:22px; width:10px; height:10px; border-radius:50%; background:#f87171; }
@@ -174,7 +174,7 @@ foreach ($sections as $idx => $s) {
 
         /* Observação */
         .note { margin-top:40px; display:flex; align-items:flex-start; gap:14px; max-width:1100px; padding:22px 24px; border:1px solid var(--line-t); border-radius:16px;
-            background:linear-gradient(120deg, rgba(0,191,166,.12) 0%, rgba(0,191,166,.03) 100%); color:var(--note); font-size:1rem; line-height:1.7; }
+            background:linear-gradient(120deg, rgba(74,144,217,.12) 0%, rgba(74,144,217,.03) 100%); color:var(--note); font-size:1rem; line-height:1.7; }
         .note::before { content:'i'; flex:0 0 28px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-top:2px; border-radius:50%; background:#0a8f7d; color:#fff; font:700 .85rem/1 var(--mono); }
         .note > div { min-width:0; }
 
@@ -188,7 +188,7 @@ foreach ($sections as $idx => $s) {
 
         /* Rodapé */
         .footer { padding:80px 0 56px; text-align:center; border-top:1px solid rgba(255,255,255,.08);
-            background:radial-gradient(ellipse 50% 80% at 50% 0%, rgba(0,191,166,.12) 0%, rgba(0,191,166,0) 70%), #07141b; }
+            background:radial-gradient(ellipse 50% 80% at 50% 0%, rgba(74,144,217,.12) 0%, rgba(74,144,217,0) 70%), #07141b; }
         .footer img { width:56px; height:auto; filter:drop-shadow(0 0 18px var(--glow)); }
         .footer strong { display:block; margin:14px 0 6px; color:#f2f8f9; font-size:1.35rem; font-weight:800; letter-spacing:-.03em; }
         .footer span { color:#7f979d; font-size:.85rem; }

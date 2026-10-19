@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= escape(csrf_token()) ?>">
-    <title><?= escape($pageTitle ?? 'ON Solutions Helpdesk') ?></title>
+    <title><?= escape($pageTitle ?? 'Brooks Construtora Helpdesk') ?></title>
     <?php
     $faviconUrl = Config::get('app_favicon');
     if ($faviconUrl): ?>
@@ -13,15 +13,24 @@
     <?php endif; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* ===== Identidade visual Brooks Construtora =====
+           Paleta oficial do site brooksconstrutora.com.br:
+           navy #1a2332, azul #2c4a6e / #3d6b9f, azul accent #4a90d9,
+           vermelho #c0392b (hover #e74c3c). Fontes: Inter (corpo) e
+           Playfair Display (títulos de marca). */
         :root {
-            --primary: #00BFA6;
-            --primary-dark: #00997D;
-            --primary-light: #B2F2E8;
-            --primary-50: #E0F7F4;
-            --sidebar-bg: #1a1a2e;
+            --primary: #4a90d9;         /* brooks-blue-accent (destaque) */
+            --primary-dark: #2c4a6e;    /* brooks-blue (hover/escuro) */
+            --primary-light: #3d6b9f;   /* brooks-blue-light */
+            --primary-50: #eaf2fb;      /* azul bem claro p/ fundos sutis */
+            --brooks-navy: #1a2332;
+            --brooks-red: #c0392b;
+            --brooks-red-hover: #e74c3c;
+            --sidebar-bg: #1a2332;      /* brooks-navy */
             --sidebar-width: 260px;
+            --font-display: 'Playfair Display', Georgia, serif;
         }
         * { box-sizing: border-box; }
         body {
@@ -77,7 +86,7 @@
         }
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
-            background: rgba(0, 191, 166, 0.15);
+            background: rgba(74, 144, 217, 0.18);
             color: var(--primary);
         }
         .sidebar .nav-link i {
@@ -113,16 +122,16 @@
             border-radius: 10px;
         }
         .sidebar-nav::-webkit-scrollbar-thumb {
-            background: rgba(0, 191, 166, 0.4);
+            background: rgba(74, 144, 217, 0.4);
             border-radius: 10px;
         }
         .sidebar-nav::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 191, 166, 0.7);
+            background: rgba(74, 144, 217, 0.7);
         }
         /* Firefox */
         .sidebar-nav {
             scrollbar-width: thin;
-            scrollbar-color: rgba(0, 191, 166, 0.4) rgba(255,255,255,0.05);
+            scrollbar-color: rgba(74, 144, 217, 0.4) rgba(255,255,255,0.05);
         }
 
         /* ===== SIDEBAR RECOLHIDA (somente ícones) ===== */
@@ -207,7 +216,7 @@
                 cursor: pointer;
                 transition: background 0.2s;
             }
-            .sidebar-collapse-btn:hover { background: rgba(0,191,166,0.2); color: var(--primary); }
+            .sidebar-collapse-btn:hover { background: rgba(74,144,217,0.2); color: var(--primary); }
         }
 
         /* ===== MAIN CONTENT ===== */

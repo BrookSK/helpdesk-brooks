@@ -1300,7 +1300,7 @@ class TicketsController extends Controller
             </div>
 
             <p style='margin-top:20px;'>
-                <a href='{$url}' style='display:inline-block;background:#00BFA6;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:0.9rem;'>
+                <a href='{$url}' style='display:inline-block;background:#4a90d9;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:0.9rem;'>
                     Ver Demanda
                 </a>
             </p>
@@ -1439,12 +1439,12 @@ class TicketsController extends Controller
             $body = "
                 <p>Olá, <strong>" . htmlspecialchars($assignee['name']) . "</strong>!</p>
                 <p>Você foi atribuído como <strong>{$roleLabel}</strong> na demanda abaixo:</p>
-                <div style='background:#f8fafc;border-radius:8px;padding:16px 20px;margin:16px 0;border-left:4px solid #00BFA6;'>
+                <div style='background:#f8fafc;border-radius:8px;padding:16px 20px;margin:16px 0;border-left:4px solid #4a90d9;'>
                     <p style='margin:4px 0;'><strong>#{$ticket['id']}</strong> — " . htmlspecialchars($ticket['title']) . "</p>
                     <p style='margin:4px 0;color:#666;font-size:0.85rem;'>Cliente: " . htmlspecialchars($ticket['client_name'] ?? '-') . "</p>
                 </div>
                 <p style='margin-top:20px;'>
-                    <a href='{$ticketUrl}' style='display:inline-block;background:#00BFA6;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:0.9rem;'>Ver Demanda</a>
+                    <a href='{$ticketUrl}' style='display:inline-block;background:#4a90d9;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:0.9rem;'>Ver Demanda</a>
                 </p>";
             $htmlBody = Mailer::template('Nova atribuição de demanda', $body);
             Mailer::send($assignee['email'], "Demanda #{$ticket['id']} atribuída a você", $htmlBody);

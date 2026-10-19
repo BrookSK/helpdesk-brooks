@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Gravações - ON Solutions Helpdesk'; $currentPage = 'videocall'; ?>
+<?php $pageTitle = 'Gravações - Brooks Construtora Helpdesk'; $currentPage = 'videocall'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 <?php

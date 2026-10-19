@@ -28,12 +28,12 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
         -- INTERESSE: responde no mesmo canal → Qualificado → tag → agenda (mesmo canal) → encerra
         JSON_OBJECT('id','pos_reply','type','reply','x',120,'y',440,'next','pos_move','data', JSON_OBJECT(
             'subject','Que bom, {{primeiro_nome}}! Vamos avançar',
-            'body','{{primeiro_nome}}, que ótimo! Vou preparar as próximas informações e um especialista da ON Solutions entra em contato para entender melhor o cenário da {{empresa}} e propor os próximos passos.')),
+            'body','{{primeiro_nome}}, que ótimo! Vou preparar as próximas informações e um especialista da Brooks Construtora entra em contato para entender melhor o cenário da {{empresa}} e propor os próximos passos.')),
         JSON_OBJECT('id','pos_move','type','move','x',120,'y',560,'next','pos_tag','data', JSON_OBJECT('column_name','Qualificado')),
         JSON_OBJECT('id','pos_tag','type','tag','x',120,'y',680,'next','sched','data', JSON_OBJECT('label','interessado','color','#28a745')),
         JSON_OBJECT('id','sched','type','schedule','x',120,'y',800,'next','done','data', JSON_OBJECT(
             'channel','reply','duration',45,
-            'title','Reunião com a ON Solutions Brasil',
+            'title','Reunião com a Brooks Construtora Brasil',
             'message','{{primeiro_nome}}, para avançarmos, escolha o melhor dia e horário para uma conversa rápida (online): {{link_agendamento}}')),
 
         -- SEM INTERESSE: responde no mesmo canal → unsubscribe → Perdido → tag → encerra

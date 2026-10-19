@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Analisar ' . escape($viewUser['name']) . ' - ON Solutions Helpdesk'; $currentPage = 'users'; ?>
+<?php $pageTitle = 'Analisar ' . escape($viewUser['name']) . ' - Brooks Construtora Helpdesk'; $currentPage = 'users'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -43,7 +43,7 @@ $val = function ($v) {
     <div class="card mb-3">
         <div class="card-body d-flex align-items-center gap-3 flex-wrap">
             <div class="d-flex align-items-center justify-content-center rounded-circle text-white fw-semibold"
-                 style="width:56px;height:56px;background:#00BFA6;font-size:1.25rem;flex:0 0 auto;">
+                 style="width:56px;height:56px;background:#4a90d9;font-size:1.25rem;flex:0 0 auto;">
                 <?= escape($initials) ?>
             </div>
             <div class="flex-grow-1">

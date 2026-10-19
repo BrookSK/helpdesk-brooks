@@ -3,14 +3,14 @@
 /**
  * Monta o PDF da proposta no formato de docs/proposta-modelo.pdf (A4 horizontal).
  *
- * Páginas 1–5 (apresentação da ON Solutions) são as próprias páginas do modelo,
+ * Páginas 1–5 (apresentação da Brooks Construtora) são as próprias páginas do modelo,
  * em public/assets/proposal/modelo-0N.jpg (JPEG: PNG com transparência deixa o
  * dompdf lento demais). Da página 6 em diante o conteúdo vem
  * da proposta. Cabeçalho, rodapé e "Pág. N" são desenhados por cima de cada página.
  */
 class ProposalPdf
 {
-    public const BRAND = 'ON Solutions Brasil';
+    public const BRAND = 'Brooks Construtora Brasil';
     public const MODEL_PAGES = 5;
 
     /**

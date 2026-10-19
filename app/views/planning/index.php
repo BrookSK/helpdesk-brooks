@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Planejamento - ON Solutions Helpdesk'; $currentPage = 'planning'; ?>
+<?php $pageTitle = 'Planejamento - Brooks Construtora Helpdesk'; $currentPage = 'planning'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -851,7 +851,7 @@ $priorityLabels = ['low' => 'Baixa', 'medium' => 'Média', 'high' => 'Alta', 'ur
 #cardDetailModal .modal-content { border-radius: 12px; overflow: hidden; }
 #cardDetailModal .modal-header { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); }
 #cardDetailModal .nav-tabs .nav-link { font-size: 0.78rem; color: #6c757d; border: none; border-bottom: 2px solid transparent; }
-#cardDetailModal .nav-tabs .nav-link.active { color: var(--primary, #00BFA6); border-bottom-color: var(--primary, #00BFA6); background: transparent; font-weight: 600; }
+#cardDetailModal .nav-tabs .nav-link.active { color: var(--primary, #4a90d9); border-bottom-color: var(--primary, #4a90d9); background: transparent; font-weight: 600; }
 #cardDetailModal .nav-tabs .nav-link:hover:not(.active) { color: #333; border-bottom-color: #dee2e6; }
 .ticket-msg-bubble { padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; max-width: 85%; word-wrap: break-word; }
 .ticket-msg-client { background: #e3f2fd; margin-right: auto; border-bottom-left-radius: 2px; }
@@ -877,7 +877,7 @@ $priorityLabels = ['low' => 'Baixa', 'medium' => 'Média', 'high' => 'Alta', 'ur
 .task-image-thumb:hover { transform: scale(1.08); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .task-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #2e7d32; }
 .task-upload-zone { border: 2px dashed #dee2e6; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; transition: all 0.2s; }
-.task-upload-zone:hover { border-color: var(--primary, #00BFA6); background: #f0fdf4; }
+.task-upload-zone:hover { border-color: var(--primary, #4a90d9); background: #f0fdf4; }
 
 #calendar-container table { width: 100%; border-collapse: collapse; }
 #calendar-container th, #calendar-container td { border: 1px solid #e9ecef; padding: 4px; vertical-align: top; font-size: 0.8rem; }
@@ -893,7 +893,7 @@ $priorityLabels = ['low' => 'Baixa', 'medium' => 'Média', 'high' => 'Alta', 'ur
 .cal-month-day-num { padding: 6px 8px 4px; font-size: 0.78rem; font-weight: 600; color: #555; border-right: 1px solid #f0f0f0; min-height: 28px; }
 .cal-month-day-num:last-child { border-right: none; }
 .cal-month-day-num.other-month { opacity: 0.3; }
-.cal-month-day-num.today .day-number { background: var(--primary, #00BFA6); color: #fff; border-radius: 50%; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; }
+.cal-month-day-num.today .day-number { background: var(--primary, #4a90d9); color: #fff; border-radius: 50%; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; }
 .cal-month-events { position: relative; min-height: 30px; padding: 2px 0; overflow: visible; }
 /* Barra de evento com extensão multi-dia (estilo Google Agenda) */
 .cal-span-event { position: absolute; height: 22px; display: flex; align-items: center; gap: 5px; padding: 2px 8px; cursor: pointer; overflow: hidden; white-space: nowrap; transition: filter 0.15s, box-shadow 0.15s; z-index: 1; }

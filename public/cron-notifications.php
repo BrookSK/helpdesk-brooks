@@ -32,7 +32,7 @@ if (empty($notifications)) {
 
 $smtpHost = Config::get('smtp_host');
 $fromEmail = Config::get('smtp_from_email');
-$fromName = Config::get('smtp_from_name', 'ON Solutions Helpdesk');
+$fromName = Config::get('smtp_from_name', 'Brooks Construtora Helpdesk');
 
 if (empty($smtpHost) || empty($fromEmail)) {
     echo "SMTP não configurado. Marcando notificações como enviadas.\n";
@@ -58,13 +58,13 @@ foreach ($notifications as $n) {
     <body style='font-family:Inter,Arial,sans-serif;background:#f5f7fa;padding:20px;'>
         <div style='max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:30px;box-shadow:0 2px 10px rgba(0,0,0,0.05);'>
             <div style='text-align:center;margin-bottom:20px;'>
-                <span style='color:#00BFA6;font-weight:700;font-size:1.5rem;'>ON</span>
+                <span style='color:#4a90d9;font-weight:700;font-size:1.5rem;'>ON</span>
                 <span style='font-weight:300;font-size:1.2rem;'> Solutions</span>
             </div>
             <h2 style='color:#333;'>{$subject}</h2>
             <p style='color:#666;line-height:1.6;'>" . nl2br(htmlspecialchars($body)) . "</p>
             <hr style='border:none;border-top:1px solid #eee;margin:20px 0;'>
-            <p style='color:#999;font-size:0.8rem;text-align:center;'>ON Solutions Helpdesk</p>
+            <p style='color:#999;font-size:0.8rem;text-align:center;'>Brooks Construtora Helpdesk</p>
         </div>
     </body>
     </html>";

@@ -11,8 +11,8 @@
     font-size:0.78rem; cursor:pointer; user-select:none; background:#fff; color:#495057; margin:0;
     transition:all .12s ease;
 }
-.chips-group .chip input:checked + label { background:#00997D; border-color:#00997D; color:#fff; }
-.chips-group .chip label:hover { border-color:#00997D; }
+.chips-group .chip input:checked + label { background:#2c4a6e; border-color:#2c4a6e; color:#fff; }
+.chips-group .chip label:hover { border-color:#2c4a6e; }
 .chip-addbox { display:flex; gap:6px; margin-top:6px; }
 .chip-hint { font-size:0.72rem; color:#8a8f98; }
 </style>

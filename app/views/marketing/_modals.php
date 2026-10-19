@@ -275,8 +275,8 @@ function renderPendingFiles() {
     box.innerHTML = pendingFiles.map((f, i) => {
         const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(f.name);
         const icon = isImg ? 'bi-file-earmark-image' : 'bi-file-earmark-text';
-        return `<div class="d-flex align-items-center gap-2 border rounded p-1 pe-2" style="background:#f0faf8;">
-            <i class="bi ${icon}" style="font-size:1.2rem;color:#00997D;"></i>
+        return `<div class="d-flex align-items-center gap-2 border rounded p-1 pe-2" style="background:#eef4fb;">
+            <i class="bi ${icon}" style="font-size:1.2rem;color:#2c4a6e;"></i>
             <span class="small text-truncate" style="max-width:140px;">${escapeHtml(f.name)}</span>
             <button class="btn btn-sm btn-link text-danger p-0" onclick="removePendingFile(${i})"><i class="bi bi-x-lg"></i></button>
         </div>`;
@@ -473,7 +473,7 @@ function renderHistory(history) {
         const when = h.created_at ? new Date(h.created_at.replace(' ', 'T')).toLocaleString('pt-BR') : '';
         const who = h.user_name ? ` — ${escapeHtml(h.user_name)}` : '';
         const notes = h.notes ? `<div class="text-muted" style="white-space:pre-wrap;">${escapeHtml(h.notes)}</div>` : '';
-        return `<div class="border-start ps-2 mb-2" style="border-width:3px !important;border-color:#00997D !important;">
+        return `<div class="border-start ps-2 mb-2" style="border-width:3px !important;border-color:#2c4a6e !important;">
             <div class="fw-medium">${label}${who}</div>
             <div class="text-muted" style="font-size:0.72rem;">${when}</div>
             ${notes}
@@ -488,7 +488,7 @@ function renderAttachments(atts) {
         const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(a.file_name);
         const thumb = isImg
             ? `<img src="${BASE + a.file_path}" style="width:46px;height:46px;object-fit:cover;border-radius:6px;">`
-            : `<i class="bi bi-file-earmark-text" style="font-size:1.4rem;color:#00997D;"></i>`;
+            : `<i class="bi bi-file-earmark-text" style="font-size:1.4rem;color:#2c4a6e;"></i>`;
         const canDel = currentItem && currentItem.can_manage;
         return `<div class="d-flex align-items-center gap-2 border rounded p-1 pe-2" style="background:#fafbfc;">
             <a href="${BASE + a.file_path}" target="_blank">${thumb}</a>

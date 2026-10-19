@@ -7,7 +7,7 @@
     <?php if ($logoUrlMobile): ?>
     <img src="<?= baseUrl($logoUrlMobile) ?>" alt="Logo" style="max-height:28px;">
     <?php else: ?>
-    <span class="logo-text">ON</span><span class="fw-light"> Solutions</span>
+    <span class="logo-text">BROOKS</span><span class="fw-light"> Construtora</span>
     <?php endif; ?>
 </div>
 
@@ -21,10 +21,10 @@
         <?php if ($logoUrl): ?>
         <img src="<?= baseUrl($logoUrl) ?>" alt="Logo" style="max-height:38px;max-width:180px;">
         <?php else: ?>
-        <span class="logo-text">ON</span>
-        <span class="text-white fw-light"> Solutions</span>
+        <span class="logo-text">BROOKS</span>
+        <span class="text-white fw-light"> Construtora</span>
         <?php endif; ?>
-        <div style="color:#00BFA6;font-size:0.78rem;font-weight:500;margin-top:3px;">Helpdesk</div>
+        <div style="color:var(--primary);font-size:0.78rem;font-weight:500;margin-top:3px;letter-spacing:1px;">Helpdesk</div>
         <button type="button" class="sidebar-collapse-btn position-absolute" id="btn-collapse-sidebar" title="Recolher menu" style="top:12px;right:10px;">
             <i class="bi bi-chevron-double-left" id="collapse-icon"></i>
         </button>

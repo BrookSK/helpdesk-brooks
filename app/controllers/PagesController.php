@@ -5,7 +5,7 @@ class PagesController extends Controller
     // Termos de Uso (público, sem login)
     public function termos()
     {
-        $appName = Config::get('app_name') ?: 'ON Solutions Helpdesk';
+        $appName = Config::get('app_name') ?: 'Brooks Construtora Helpdesk';
         $faviconUrl = Config::get('app_favicon');
         $logoUrl = Config::get('app_logo');
         $base = baseUrl('');
@@ -16,7 +16,7 @@ class PagesController extends Controller
     // Política de Privacidade (público, sem login)
     public function privacidade()
     {
-        $appName = Config::get('app_name') ?: 'ON Solutions Helpdesk';
+        $appName = Config::get('app_name') ?: 'Brooks Construtora Helpdesk';
         $faviconUrl = Config::get('app_favicon');
         $logoUrl = Config::get('app_logo');
         $base = baseUrl('');

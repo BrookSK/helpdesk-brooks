@@ -30,7 +30,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
         JSON_OBJECT('id','pos_tag','type','tag','x',120,'y',680,'next','sched','data', JSON_OBJECT('label','interessado','color','#28a745')),
         JSON_OBJECT('id','sched','type','schedule','x',120,'y',800,'next','done','data', JSON_OBJECT(
             'channel','auto','duration',45,
-            'title','Reunião com a ON Solutions Brasil',
+            'title','Reunião com a Brooks Construtora Brasil',
             'message','{{primeiro_nome}}, que ótimo! Para avançarmos, escolha o melhor dia e horário para uma conversa rápida (online): {{link_agendamento}}')),
 
         -- SEM INTERESSE: confirma → unsubscribe → Perdido → tag → encerra

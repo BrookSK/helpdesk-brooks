@@ -33,7 +33,7 @@
                         <div class="border rounded-3 p-3 h-100 d-flex align-items-center gap-3 company-choice">
                             <div class="rounded-circle bg-light d-flex align-items-center justify-content-center flex-shrink-0"
                                  style="width:46px;height:46px;">
-                                <i class="bi bi-building" style="font-size:1.2rem;color:#00BFA6;"></i>
+                                <i class="bi bi-building" style="font-size:1.2rem;color:#4a90d9;"></i>
                             </div>
                             <div class="flex-grow-1 overflow-hidden">
                                 <div class="fw-medium text-dark text-truncate"><?= escape($c['name']) ?></div>
@@ -55,7 +55,7 @@
 
 <style>
 .company-choice { transition: all .15s ease; cursor: pointer; }
-.company-choice:hover { border-color: #00BFA6 !important; box-shadow: 0 2px 10px rgba(0,191,166,0.15); }
+.company-choice:hover { border-color: #4a90d9 !important; box-shadow: 0 2px 10px rgba(74,144,217,0.15); }
 </style>
 
 <?php require APP_PATH . '/views/layouts/footer.php'; ?>

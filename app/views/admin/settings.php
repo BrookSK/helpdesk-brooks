@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Configurações - ON Solutions Helpdesk'; $currentPage = 'settings'; ?>
+<?php $pageTitle = 'Configurações - Brooks Construtora Helpdesk'; $currentPage = 'settings'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
@@ -94,7 +94,7 @@
                         <label class="form-label fw-medium small">Logo do Sistema</label>
                         <?php if (!empty($settings['app_logo'])): ?>
                         <div class="mb-2">
-                            <img src="<?= baseUrl($settings['app_logo']) ?>" alt="Logo" style="max-height:50px;background:#1a1a2e;padding:8px 12px;border-radius:8px;">
+                            <img src="<?= baseUrl($settings['app_logo']) ?>" alt="Logo" style="max-height:50px;background:#1a2332;padding:8px 12px;border-radius:8px;">
                         </div>
                         <?php endif; ?>
                         <input type="file" name="app_logo" class="form-control form-control-sm" accept="image/*">
@@ -214,7 +214,7 @@
                         <div class="col-md-4"><label class="form-label small">Especialidades</label><input type="text" class="form-control form-control-sm sig-specialties" value="<?= escape($sig['specialties'] ?? '') ?>"></div>
                         <div class="col-md-4"><label class="form-label small">E-mail de contato</label><input type="text" class="form-control form-control-sm sig-contact_email" value="<?= escape($sig['contact_email'] ?? '') ?>"></div>
                         <div class="col-md-4"><label class="form-label small">Site</label><input type="text" class="form-control form-control-sm sig-site" value="<?= escape($sig['site'] ?? '') ?>"></div>
-                        <div class="col-md-4"><label class="form-label small">Cor dos links</label><input type="color" class="form-control form-control-sm form-control-color sig-color" value="<?= escape($sig['color'] ?: '#00997D') ?>" style="height:31px;"></div>
+                        <div class="col-md-4"><label class="form-label small">Cor dos links</label><input type="color" class="form-control form-control-sm form-control-color sig-color" value="<?= escape($sig['color'] ?: '#2c4a6e') ?>" style="height:31px;"></div>
                         <div class="col-md-8"><label class="form-label small">Tagline (linha final)</label><input type="text" class="form-control form-control-sm sig-tagline" value="<?= escape($sig['tagline'] ?? '') ?>"></div>
                         <div class="col-md-4"><label class="form-label small">Logo</label><input type="file" class="form-control form-control-sm sig-logo" accept="image/*"></div>
                         <div class="col-12">
@@ -416,7 +416,7 @@
                     <div class="modal-body">
                         <div class="mb-2">
                             <label class="form-label small fw-medium">Nome (opcional)</label>
-                            <input type="text" id="bk-label" class="form-control form-control-sm" placeholder="Ex: Conta ON Solutions">
+                            <input type="text" id="bk-label" class="form-control form-control-sm" placeholder="Ex: Conta Brooks Construtora">
                         </div>
                         <div class="mb-2">
                             <label class="form-label small fw-medium">API Key *</label>
@@ -1277,7 +1277,7 @@ function saveSignature(btn) {
     fd.append('contact_email', val('.sig-contact_email'));
     fd.append('site', val('.sig-site'));
     fd.append('tagline', val('.sig-tagline'));
-    fd.append('color', val('.sig-color') || '#00997D');
+    fd.append('color', val('.sig-color') || '#2c4a6e');
     const activeEl = block.querySelector('.sig-active');
     const active = activeEl ? (activeEl.type === 'checkbox' ? activeEl.checked : activeEl.value === '1') : true;
     fd.append('is_active', active ? '1' : '0');

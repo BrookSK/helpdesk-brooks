@@ -2249,13 +2249,13 @@ class VideocallController extends Controller
 <!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{$t} · ON Solutions Brasil</title>
+<title>{$t} · Brooks Construtora Brasil</title>
 {$favTag}
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>body{background:#0f1020;color:#e8eaf1;font-family:'Segoe UI',system-ui,Arial,sans-serif;}
 .box{max-width:460px;margin:12vh auto;background:#1a1c2e;border-radius:18px;padding:36px 30px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4);}
-.icon{font-size:3rem;color:#00BFA6;}</style></head>
+.icon{font-size:3rem;color:#4a90d9;}</style></head>
 <body><div class="box"><div class="icon"><i class="bi bi-camera-video-off"></i></div>
 <h4 class="mt-3">{$t}</h4><p class="text-secondary">{$m}</p></div></body></html>
 HTML;

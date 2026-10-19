@@ -15,7 +15,7 @@
         .legal-header { text-align: center; margin-bottom: 40px; }
         .legal-header img { max-height: 45px; margin-bottom: 15px; }
         .legal-card { background: #fff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-        .legal-card h1 { font-size: 1.6rem; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }
+        .legal-card h1 { font-size: 1.6rem; font-weight: 700; color: #1a2332; margin-bottom: 8px; }
         .legal-card h2 { font-size: 1.1rem; font-weight: 600; color: #333; margin-top: 28px; margin-bottom: 12px; }
         .legal-card p, .legal-card li { font-size: 0.9rem; color: #555; line-height: 1.7; }
         .legal-card ul { padding-left: 20px; }
@@ -25,7 +25,7 @@
         .legal-card table th { background: #f8f9fa; font-weight: 600; color: #333; }
         .legal-date { font-size: 0.8rem; color: #999; text-align: center; margin-top: 30px; }
         .legal-back { text-align: center; margin-top: 20px; }
-        .legal-back a { color: #00BFA6; text-decoration: none; font-weight: 500; font-size: 0.9rem; }
+        .legal-back a { color: #4a90d9; text-decoration: none; font-weight: 500; font-size: 0.9rem; }
         .legal-back a:hover { text-decoration: underline; }
     </style>
 </head>
@@ -33,11 +33,11 @@
 <div class="legal-container">
     <div class="legal-header">
         <?php if ($logoUrl): ?>
-        <div style="background:#1a1a2e;display:inline-block;padding:12px 20px;border-radius:10px;margin-bottom:10px;">
+        <div style="background:#1a2332;display:inline-block;padding:12px 20px;border-radius:10px;margin-bottom:10px;">
             <img src="<?= $base . $logoUrl ?>" alt="Logo">
         </div>
         <?php else: ?>
-        <h3 style="color:#00BFA6;font-weight:700;">ON Solutions</h3>
+        <h3 style="color:#4a90d9;font-weight:700;">Brooks Construtora</h3>
         <?php endif; ?>
     </div>
 
@@ -46,7 +46,7 @@
         <p style="color:#999;font-size:0.82rem;">Em conformidade com a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018)<br>Última atualização: Julho de 2026</p>
 
         <h2>1. Introdução</h2>
-        <p>A ON Solutions ("nós", "nosso") tem o compromisso de proteger a privacidade dos dados pessoais dos usuários da plataforma <?= htmlspecialchars($appName) ?>. Esta Política de Privacidade descreve como coletamos, utilizamos, armazenamos e protegemos suas informações pessoais em conformidade com a Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018).</p>
+        <p>A Brooks Construtora ("nós", "nosso") tem o compromisso de proteger a privacidade dos dados pessoais dos usuários da plataforma <?= htmlspecialchars($appName) ?>. Esta Política de Privacidade descreve como coletamos, utilizamos, armazenamos e protegemos suas informações pessoais em conformidade com a Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018).</p>
 
         <h2>2. Dados Pessoais Coletados</h2>
         <p>Coletamos os seguintes dados pessoais durante o uso da Plataforma:</p>
@@ -141,13 +141,13 @@
         <p>Nos comprometemos a responder às solicitações dentro do prazo legal de 15 dias.</p>
 
         <h2>12. Autoridade Nacional de Proteção de Dados</h2>
-        <p>Caso considere que o tratamento de seus dados pessoais viola a LGPD, você tem o direito de peticionar perante a Autoridade Nacional de Proteção de Dados (ANPD) — <a href="https://www.gov.br/anpd" target="_blank" style="color:#00BFA6;">www.gov.br/anpd</a>.</p>
+        <p>Caso considere que o tratamento de seus dados pessoais viola a LGPD, você tem o direito de peticionar perante a Autoridade Nacional de Proteção de Dados (ANPD) — <a href="https://www.gov.br/anpd" target="_blank" style="color:#4a90d9;">www.gov.br/anpd</a>.</p>
 
         <h2>13. Alterações nesta Política</h2>
         <p>Esta Política poderá ser atualizada periodicamente. Recomendamos a revisão periódica. Alterações significativas serão comunicadas por meio da Plataforma ou por email.</p>
 
         <div class="legal-date">
-            <p>ON Solutions Tecnologia LTDA<br>CNPJ: Informação disponível sob solicitação</p>
+            <p>Brooks Construtora Tecnologia LTDA<br>CNPJ: Informação disponível sob solicitação</p>
         </div>
     </div>
 

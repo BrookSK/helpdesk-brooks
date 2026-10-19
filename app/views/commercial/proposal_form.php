@@ -1,4 +1,4 @@
-<?php $pageTitle = 'Proposta - ON Solutions Helpdesk'; $currentPage = 'proposals'; ?>
+<?php $pageTitle = 'Proposta - Brooks Construtora Helpdesk'; $currentPage = 'proposals'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 <?php

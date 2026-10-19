@@ -55,7 +55,7 @@ SELECT
             JSON_OBJECT('id','ia','type','ai','x',360,'y',280,'nextYes','pos_mail','nextNo','neg_mail','data', JSON_OBJECT(
                 'mode','decision',
                 'model','gpt-4o-mini',
-                'prompt', 'Analise a última resposta do lead {{primeiro_nome}} (da empresa {{empresa}}) e o histórico de mensagens. Responda decision=true SOMENTE se o lead demonstrou INTERESSE em conversar, receber material, agendar reunião ou seguir com a ON Solutions. Responda decision=false se ele demonstrou desinteresse, pediu para não receber mais mensagens, disse que não é o momento ou que já tem fornecedor. Em caso de dúvida real, prefira decision=false.'
+                'prompt', 'Analise a última resposta do lead {{primeiro_nome}} (da empresa {{empresa}}) e o histórico de mensagens. Responda decision=true SOMENTE se o lead demonstrou INTERESSE em conversar, receber material, agendar reunião ou seguir com a Brooks Construtora. Responda decision=false se ele demonstrou desinteresse, pediu para não receber mais mensagens, disse que não é o momento ou que já tem fornecedor. Em caso de dúvida real, prefira decision=false.'
             )),
 
             -- Ramo INTERESSE: confirma → move para Qualificado → encerra

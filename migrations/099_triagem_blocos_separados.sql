@@ -31,7 +31,7 @@ UPDATE email_sequences SET graph = JSON_OBJECT(
             'body','{{primeiro_nome}}, que ótimo receber seu retorno!\n\nPara avançarmos, separei um espaço na agenda para uma conversa rápida (online, cerca de 45 minutos).')),
         JSON_OBJECT('id','sched','type','schedule','x',120,'y',780,'next','done','data', JSON_OBJECT(
             'channel','reply','duration',45,
-            'title','Agende sua reunião com a ON Solutions Brasil',
+            'title','Agende sua reunião com a Brooks Construtora Brasil',
             'message', CONCAT(
                 '👉 Escolha o melhor dia e horário para você neste link:\n',
                 '{{link_agendamento}}\n\n',

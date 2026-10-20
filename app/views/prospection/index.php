@@ -1,14 +1,14 @@
-<?php $pageTitle = 'Prospecção por E-mail'; $currentPage = 'prospection'; ?>
+<?php $pageTitle = 'Enviar E-mail'; $currentPage = 'prospection'; ?>
 <?php require APP_PATH . '/views/layouts/header.php'; ?>
 <?php require APP_PATH . '/views/layouts/sidebar.php'; ?>
 
 <div class="main-content">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-            <h5 class="mb-0 fw-semibold"><i class="bi bi-envelope-paper"></i> Prospecção por E-mail</h5>
-            <small class="text-muted">Envie e-mails comerciais vinculados aos leads do CRM</small>
+            <h5 class="mb-0 fw-semibold"><i class="bi bi-envelope-paper"></i> Enviar E-mail</h5>
+            <small class="text-muted">Escreva e envie um e-mail pela sua caixa</small>
         </div>
-        <a href="<?= baseUrl('prospection/history') ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico</a>
+        <a href="<?= baseUrl('prospection/inbox') ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-inbox"></i> Caixa de Entrada</a>
     </div>
 
     <?php if (empty($accounts)): ?>

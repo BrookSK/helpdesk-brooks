@@ -133,13 +133,13 @@
 <div class="modal fade" id="emailModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header d-flex justify-content-between align-items-center">
-                <h6 class="modal-title text-truncate me-auto" id="email-modal-subject" style="max-width:50%;"><i class="bi bi-envelope-open"></i> E-mail</h6>
-                <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-reply" onclick="toggleReply()"><i class="bi bi-reply"></i> Responder</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-archive" onclick="archiveCurrent()"><i class="bi bi-archive"></i> Arquivar</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete" onclick="deleteCurrent()"><i class="bi bi-trash"></i> Excluir</button>
-                    <button type="button" class="btn-close ms-1" data-bs-dismiss="modal"></button>
+            <div class="modal-header email-modal-header">
+                <h6 class="modal-title text-truncate" id="email-modal-subject"><i class="bi bi-envelope-open"></i> E-mail</h6>
+                <div class="email-modal-actions d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-reply" onclick="toggleReply()" title="Responder" aria-label="Responder"><i class="bi bi-reply"></i><span class="btn-label"> Responder</span></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-archive" onclick="archiveCurrent()" title="Arquivar" aria-label="Arquivar"><i class="bi bi-archive"></i><span class="btn-label"> Arquivar</span></button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete" onclick="deleteCurrent()" title="Excluir" aria-label="Excluir"><i class="bi bi-trash"></i><span class="btn-label"> Excluir</span></button>
+                    <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
             </div>
             <div class="modal-body" id="email-modal-body">
@@ -429,6 +429,52 @@ function escapeHtml(text) {
 .email-row-actions { opacity: 0; transition: opacity .15s; }
 .email-row:hover .email-row-actions { opacity: 1; }
 @media (hover: none) { .email-row-actions { opacity: 1; } }
+
+/* ===== Cabeçalho do modal de leitura ===== */
+.email-modal-header { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.email-modal-header .modal-title { flex: 1 1 auto; min-width: 0; font-size: 0.95rem; }
+.email-modal-actions { flex: 0 0 auto; }
+/* O corpo de e-mails externos pode trazer tabelas/imagens largas: contém o overflow */
+.email-body-frame { overflow-x: auto; -webkit-overflow-scrolling: touch; overflow-wrap: anywhere; word-break: break-word; }
+.email-body-frame img { max-width: 100%; height: auto; }
+.email-body-frame table { max-width: 100%; }
+
+/* ===== Mobile ===== */
+@media (max-width: 575.98px) {
+    /* Modais ocupam a tela toda, sem margens que apertam */
+    .modal-dialog { margin: 0; max-width: 100%; min-height: 100%; }
+    .modal-content { border-radius: 0; min-height: 100vh; }
+    .modal-xl, .modal-lg { max-width: 100%; }
+
+    /* Cabeçalho do modal de e-mail: ações viram só ícones (sem texto) */
+    .email-modal-header { padding: 10px 12px; }
+    .email-modal-actions .btn .btn-label { display: none; }
+    .email-modal-actions .btn { padding: 6px 9px; }
+    .email-modal-actions { gap: 4px; }
+
+    /* Corpo e histórico com mais respiro e sem estourar a largura */
+    #email-modal-body { padding: 12px; font-size: 0.9rem; word-break: break-word; }
+    .email-body-frame { max-height: 60vh !important; padding: 10px !important; }
+
+    /* Linhas da caixa de entrada: alvo de toque maior, assunto com mais espaço */
+    .email-row { padding: 12px 12px; }
+    .email-row .text-truncate { max-width: 100% !important; }
+    .email-row-actions { opacity: 1; }
+
+    /* Filtros empilhados ocupam a largura toda */
+    .card form.d-flex { gap: 10px !important; }
+    .card form.d-flex > div { width: 100%; }
+    .card form.d-flex select,
+    .card form.d-flex input { width: 100% !important; min-width: 0 !important; }
+    .card form.d-flex .ms-auto { margin-left: 0 !important; }
+
+    /* Área de resposta: botões em largura confortável */
+    #reply-area .d-flex.justify-content-end { flex-direction: column-reverse; }
+    #reply-area .d-flex.justify-content-end .btn { width: 100%; }
+
+    /* Cabeçalhos "De/Para/Data" do e-mail quebram sem estourar */
+    #email-modal-body .row.g-1 .col-12 { word-break: break-word; }
+}
 </style>
 
 <!-- Modal: configurar e-mail do usuário (aparece ao abrir a caixa sem conta conectada) -->

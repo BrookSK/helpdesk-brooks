@@ -371,6 +371,15 @@
             gap: 12px;
         }
         .mobile-topbar .logo-text { font-size: 1.1rem; }
+        /* Logo branca da Brooks sobre bloco navy, para não sumir no topbar branco */
+        .mobile-topbar .mobile-logo-wrap {
+            display: inline-flex;
+            align-items: center;
+            background: var(--brooks-navy, #1a2332);
+            border-radius: 8px;
+            padding: 5px 10px;
+        }
+        .mobile-topbar .mobile-logo-wrap img { max-height: 24px; max-width: 150px; display: block; }
 
         /* ===== RESPONSIVE ===== */
         @media (max-width: 991.98px) {
@@ -418,6 +427,27 @@
             .card-body { padding: 12px; }
             .chat-container { height: 300px; padding: 10px; }
             .chat-bubble { max-width: 85%; font-size: 0.82rem; }
+
+            /* ===== Modais ocupam a tela toda no celular (global) =====
+               Vale para qualquer modal do sistema (agenda, etc.), evitando
+               margens apertadas e conteúdo espremido em telas pequenas. */
+            .modal-dialog {
+                margin: 0;
+                max-width: 100%;
+                min-height: 100%;
+            }
+            .modal-content { border-radius: 0; min-height: 100vh; }
+            .modal-lg, .modal-xl { max-width: 100%; }
+            .modal-body { min-height: 0 !important; }
+
+            /* top-bar do sistema: botões ocupam a largura e não cortam texto */
+            .top-bar .btn { white-space: normal; }
+
+            /* Cabeçalhos de card com título + botões: quebram em vez de cortar */
+            .card-header .d-flex { flex-wrap: wrap; gap: 8px; }
+
+            /* Tabelas longas rolam com indicação de toque */
+            .table-responsive { -webkit-overflow-scrolling: touch; }
         }
     </style>
 </head>

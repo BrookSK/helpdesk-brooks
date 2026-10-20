@@ -5,7 +5,11 @@
     </button>
     <?php $logoUrlMobile = Config::get('app_logo'); ?>
     <?php if ($logoUrlMobile): ?>
-    <img src="<?= baseUrl($logoUrlMobile) ?>" alt="Logo" style="max-height:28px;">
+    <?php // Logo da Brooks é branca (fundo transparente); num topbar branco ela
+          // sumiria. Exibe sobre um bloco navy para ter contraste. ?>
+    <span class="mobile-logo-wrap">
+        <img src="<?= baseUrl($logoUrlMobile) ?>" alt="Logo">
+    </span>
     <?php else: ?>
     <span class="logo-text">BROOKS</span><span class="fw-light"> Construtora</span>
     <?php endif; ?>

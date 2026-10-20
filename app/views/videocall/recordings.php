@@ -31,7 +31,8 @@ function vc_fmt_size($b) {
     </div></div>
     <?php else: ?>
     <div class="card"><div class="card-body p-0">
-        <div class="table-responsive">
+        <!-- Desktop: tabela -->
+        <div class="table-responsive d-none d-md-block">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
@@ -81,6 +82,43 @@ function vc_fmt_size($b) {
                 </tbody>
             </table>
         </div>
+
+        <!-- Mobile: cards -->
+        <div class="d-md-none p-2">
+            <?php foreach ($recs as $r): ?>
+            <div class="border rounded-3 p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                    <div class="fw-medium" style="min-width:0;word-break:break-word;"><?= escape($r['room_title'] ?: 'Videochamada') ?></div>
+                    <?php if (($r['visibility'] ?? 'public') === 'private'): ?>
+                        <span class="badge bg-secondary flex-shrink-0" style="font-size:.66rem;"><i class="bi bi-shield-lock"></i> Privada</span>
+                    <?php else: ?>
+                        <span class="badge bg-info text-dark flex-shrink-0" style="font-size:.66rem;"><i class="bi bi-globe"></i> Pública</span>
+                    <?php endif; ?>
+                </div>
+                <div class="text-muted mb-2" style="font-size:0.78rem;">
+                    <i class="bi bi-calendar3"></i> <?= date('d/m/Y H:i', strtotime($r['created_at'])) ?>
+                    &middot; <i class="bi bi-clock"></i> <?= vc_fmt_dur($r['duration_sec']) ?>
+                    &middot; <?= vc_fmt_size($r['file_size']) ?>
+                </div>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2" style="font-size:0.75rem;">
+                    <span class="text-muted"><i class="bi bi-person"></i> <?= escape($r['recorder_name'] ?? $r['recorded_by_name'] ?? '—') ?></span>
+                    <?php $ts = $r['transcribe_status'] ?? 'none'; ?>
+                    <?php if ($ts === 'done'): ?>
+                        <span class="badge bg-success" style="font-size:.66rem;">Transcrição pronta</span>
+                    <?php elseif ($ts === 'processing'): ?>
+                        <span class="badge bg-warning text-dark" style="font-size:.66rem;">Transcrevendo</span>
+                    <?php elseif ($ts === 'error'): ?>
+                        <span class="badge bg-danger" style="font-size:.66rem;">Erro na transcrição</span>
+                    <?php endif; ?>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="<?= $base ?>/videocall/watch/<?= escape($r['token']) ?>" class="btn btn-sm btn-primary"><i class="bi bi-play-fill"></i> Abrir</a>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="copyShare('<?= escape($r['token']) ?>')"><i class="bi bi-link-45deg"></i> Link</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="delRec('<?= escape($r['token']) ?>', this)"><i class="bi bi-trash"></i> Excluir</button>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
     </div></div>
     <?php endif; ?>
 </div>
@@ -100,7 +138,8 @@ function delRec(token, btn) {
     fetch(VC_BASE + '/videocall/deleteRecording/' + token, { method: 'POST', headers: {'X-Requested-With':'XMLHttpRequest'} })
         .then(r => r.json()).then(d => {
             if (d.error) { alert(d.error); btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash"></i>'; return; }
-            const tr = btn.closest('tr'); if (tr) tr.remove();
+            // Remove a linha (desktop) ou o card (mobile) que contém o botão.
+            const container = btn.closest('tr') || btn.closest('.border.rounded-3'); if (container) container.remove();
         })
         .catch(() => { alert('Erro ao excluir.'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash"></i>'; });
 }

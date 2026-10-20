@@ -392,6 +392,29 @@ function copyQuickLink() {
 .cal-grid td:hover .cal-cell-add { opacity: 1; }
 .cal-event { font-size: 0.68rem; padding: 2px 6px 2px 7px; border-radius: 4px; margin-bottom: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .cal-week td { height: 300px; }
+
+/* ===== Mobile da Agenda (~375px) ===== */
+@media (max-width: 575.98px) {
+    /* Kanban: colunas mais estreitas para caber melhor na rolagem horizontal */
+    .agenda-col { min-width: 82vw; }
+
+    /* Calendário do mês: células mais baixas e cabeçalhos curtos; eventos
+       passam a quebrar linha (em vez de só cortar) para não "sumir" texto. */
+    .cal-grid td { height: 64px; padding: 2px; }
+    .cal-grid th { font-size: 0.6rem; padding: 4px 1px; }
+    .cal-daynum { font-size: 0.66rem; }
+    .cal-event { font-size: 0.6rem; padding: 1px 3px; white-space: normal; overflow: hidden; }
+    .cal-week td { height: 150px; }
+    /* Título do mês não força largura mínima que empurra os botões de navegação */
+    #cal-title { min-width: 0 !important; font-size: 0.95rem; }
+    #calendar-view .card-body > .d-flex { gap: 8px !important; }
+
+    /* Botão de "+" nas células fica sempre visível no toque (sem hover) */
+    .cal-cell-add { opacity: 1 !important; }
+
+    /* Toolbar de abas com respiro */
+    .agenda-tab-btn { padding-left: .5rem !important; padding-right: .5rem !important; }
+}
 </style>
 
 <script>

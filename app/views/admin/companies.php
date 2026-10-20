@@ -28,7 +28,8 @@
 
     <div class="card">
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <!-- Desktop: tabela -->
+            <div class="table-responsive d-none d-md-block">
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
@@ -70,6 +71,31 @@
                         <tr id="no-companies-msg" style="display:none"><td colspan="8" class="text-center text-muted py-4">Nenhuma empresa encontrada.</td></tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Mobile: cards -->
+            <div class="d-md-none p-2">
+                <?php foreach ($companies as $c): ?>
+                <div class="border rounded-3 p-3 mb-2 company-row" data-search="<?= escape(mb_strtolower($c['name'] . ' ' . ($c['document'] ?? '') . ' ' . ($c['email'] ?? ''))) ?>">
+                    <a href="<?= baseUrl('companies/details/' . $c['id']) ?>" class="text-decoration-none text-dark d-block mb-2">
+                        <span class="fw-medium"><i class="bi bi-building text-primary me-1"></i><?= escape($c['name']) ?></span>
+                    </a>
+                    <div class="text-muted mb-2" style="font-size:0.8rem;word-break:break-word;">
+                        <?php if (!empty($c['document'])): ?><div><i class="bi bi-card-text"></i> <?= escape($c['document']) ?></div><?php endif; ?>
+                        <?php if (!empty($c['email'])): ?><div><i class="bi bi-envelope"></i> <?= escape($c['email']) ?></div><?php endif; ?>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-2" style="font-size:0.72rem;">
+                        <span class="badge bg-primary"><i class="bi bi-people"></i> <?= $c['users_count'] ?> usuários</span>
+                        <span class="badge bg-secondary"><?= $c['tickets_count'] ?? 0 ?> demandas</span>
+                        <span class="badge bg-info text-dark"><?= $c['documents_count'] ?? 0 ?> docs</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="<?= baseUrl('companies/details/' . $c['id']) ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-in-right"></i> Abrir</a>
+                        <a href="<?= baseUrl('companies/edit/' . $c['id']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a>
+                        <a href="<?= baseUrl('companies/delete/' . $c['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remover esta empresa?')"><i class="bi bi-trash"></i> Remover</a>
+                    </div>
+                </div>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>

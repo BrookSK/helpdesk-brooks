@@ -491,7 +491,11 @@ function escapeHtmlSend(t) { const d = document.createElement('div'); d.textCont
 <style>
 #pf-editor { background: #fff; border-radius: 0 0 6px 6px; }
 .ql-toolbar { border-radius: 6px 6px 0 0; }
-.ql-container { border-radius: 0 0 6px 6px; min-height: 200px; }
+/* O container do Quill tem altura própria (toolbar + área editável). A área
+   editável (.ql-editor) é que rola; o container NÃO usa min-height para não
+   somar altura em cima do editor e empurrar/sobrepor o conteúdo seguinte. */
+.ql-container { border-radius: 0 0 6px 6px; }
+.ql-editor { min-height: 200px; max-height: 320px; overflow-y: auto; }
 
 /* Chips de variáveis: embrulham com respiro */
 #pf-var-chips { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -513,13 +517,11 @@ function escapeHtmlSend(t) { const d = document.createElement('div'); d.textCont
        DEPOIS do formulário no mobile — dá um respiro entre as colunas. */
     .main-content .row.g-3 > [class*="col-lg-4"] { margin-top: 4px; }
 
-    /* Editor: toolbar enxuta que embrulha sem cortar; altura de digitação
-       confortável mas limitada. margin-bottom garante que o texto de ajuda
-       logo abaixo não seja sobreposto pelo container do Quill. */
+    /* Editor: toolbar enxuta que embrulha sem cortar; área editável com altura
+       menor no celular e scroll interno (sem empurrar/sobrepor o que vem depois). */
     .ql-toolbar.ql-snow { padding: 6px 4px; }
     .ql-toolbar.ql-snow .ql-formats { margin-right: 8px; margin-bottom: 2px; }
-    .ql-container.ql-snow { min-height: 150px; max-height: 42vh; overflow-y: auto; }
-    #pf-editor { min-height: 150px; margin-bottom: 8px; }
+    .ql-editor { min-height: 140px; max-height: 38vh; }
 
     /* Botão Enviar ocupa a largura toda (alvo de toque grande), com respiro acima */
     #pf-send-btn { width: 100%; }

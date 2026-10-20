@@ -91,8 +91,8 @@
                             <div class="col-12">
                                 <label class="form-label small fw-medium">Mensagem *</label>
                                 <div id="pf-var-chips" class="mb-1"></div>
-                                <div id="pf-editor" style="min-height:200px;"></div>
-                                <small class="text-muted d-block mt-1">Toque numa variável acima para inseri-la na mensagem.</small>
+                                <div id="pf-editor"></div>
+                                <small class="text-muted pf-editor-help">Toque numa variável acima para inseri-la na mensagem.</small>
                             </div>
 
                             <!-- Anexos -->
@@ -496,6 +496,17 @@ function escapeHtmlSend(t) { const d = document.createElement('div'); d.textCont
 /* Chips de variáveis: embrulham com respiro */
 #pf-var-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 
+/* Texto de ajuda do editor: sempre em fluxo próprio, com folga acima e abaixo,
+   para nunca ser sobreposto/cortado pelo editor ou pelo botão (inclui desktop). */
+.pf-editor-help {
+    display: block;
+    clear: both;
+    margin-top: 6px;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 /* ===== Mobile da tela de Enviar E-mail (~375px) ===== */
 @media (max-width: 575.98px) {
     /* O painel lateral (Vincular a Lead / Sequência / Últimos Envios) vem
@@ -503,19 +514,29 @@ function escapeHtmlSend(t) { const d = document.createElement('div'); d.textCont
     .main-content .row.g-3 > [class*="col-lg-4"] { margin-top: 4px; }
 
     /* Editor: toolbar enxuta que embrulha sem cortar; altura de digitação
-       confortável mas limitada, para não empurrar o botão e o texto de ajuda. */
+       confortável mas limitada. margin-bottom garante que o texto de ajuda
+       logo abaixo não seja sobreposto pelo container do Quill. */
     .ql-toolbar.ql-snow { padding: 6px 4px; }
     .ql-toolbar.ql-snow .ql-formats { margin-right: 8px; margin-bottom: 2px; }
     .ql-container.ql-snow { min-height: 150px; max-height: 42vh; overflow-y: auto; }
-    #pf-editor { min-height: 150px; }
+    #pf-editor { min-height: 150px; margin-bottom: 8px; }
 
     /* Botão Enviar ocupa a largura toda (alvo de toque grande), com respiro acima */
     #pf-send-btn { width: 100%; }
     .d-flex.justify-content-end.mt-3 { justify-content: stretch !important; margin-top: 1rem !important; }
 
-    /* Textos de ajuda (small) quebram linha e não encostam/cortam na borda */
+    /* Textos de ajuda (small) em fluxo normal, com respiro, sem sobreposição
+       nem corte na borda. position:static evita que fiquem atrás do editor. */
     .main-content form small,
-    .main-content form .form-text { display: block; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+    .main-content form .form-text {
+        display: block;
+        position: static;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
+        margin-top: 4px;
+        clear: both;
+    }
 
     /* Chips de variáveis um pouco maiores para tocar melhor */
     #pf-var-chips .btn { font-size: 0.72rem !important; padding: 3px 7px !important; }

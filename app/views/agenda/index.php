@@ -56,7 +56,7 @@ $totalHistory = array_sum(array_map('count', $groupedHistory));
             <h5 class="mb-0 fw-semibold"><i class="bi bi-calendar2-week"></i> Agenda Comercial</h5>
             <small class="text-muted">Reuniões vinculadas aos leads do CRM</small>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-wrap gap-2 agenda-topbar-actions">
             <div class="btn-group btn-group-sm" id="view-toggle">
                 <button type="button" class="btn btn-outline-primary" data-view="kanban"><i class="bi bi-kanban"></i> Kanban</button>
                 <button type="button" class="btn btn-outline-primary active" data-view="calendar"><i class="bi bi-calendar3"></i> Calendário</button>
@@ -393,27 +393,41 @@ function copyQuickLink() {
 .cal-event { font-size: 0.68rem; padding: 2px 6px 2px 7px; border-radius: 4px; margin-bottom: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .cal-week td { height: 300px; }
 
-/* ===== Mobile da Agenda (~375px) ===== */
-@media (max-width: 575.98px) {
-    /* Kanban: colunas mais estreitas para caber melhor na rolagem horizontal */
-    .agenda-col { min-width: 82vw; }
+/* ===== Visão em lista do calendário (só no mobile) ===== */
+.cal-list { display: none; }
+.cal-list-day { margin-bottom: 14px; }
+.cal-list-day-hd { display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.8rem; font-weight: 700; color: #334; padding: 6px 2px; border-bottom: 1px solid #eef0f2; margin-bottom: 6px; }
+.cal-list-day.is-today .cal-list-day-hd { color: var(--primary, #4a90d9); }
+.cal-list-add { color: var(--primary, #4a90d9); cursor: pointer; font-size: 1rem; }
+.cal-list-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
+.cal-list-time { font-weight: 700; font-size: 0.82rem; color: #445; flex-shrink: 0; min-width: 42px; }
+.cal-list-title { font-size: 0.85rem; font-weight: 600; word-break: break-word; line-height: 1.25; }
 
-    /* Calendário do mês: células mais baixas e cabeçalhos curtos; eventos
-       passam a quebrar linha (em vez de só cortar) para não "sumir" texto. */
-    .cal-grid td { height: 64px; padding: 2px; }
-    .cal-grid th { font-size: 0.6rem; padding: 4px 1px; }
-    .cal-daynum { font-size: 0.66rem; }
-    .cal-event { font-size: 0.6rem; padding: 1px 3px; white-space: normal; overflow: hidden; }
-    .cal-week td { height: 150px; }
-    /* Título do mês não força largura mínima que empurra os botões de navegação */
+/* ===== Mobile da Agenda (~375px) ===== */
+@media (max-width: 767.98px) {
+    /* Troca a grade do calendário pela lista (mais usável no celular) */
+    .cal-grid-wrap { display: none; }
+    .cal-list { display: block; }
+
+    /* Kanban: colunas quase da largura da tela, rolagem horizontal fluida */
+    .agenda-col { min-width: 86vw; }
+
+    /* Título do mês/semana não força largura mínima que empurra os botões */
     #cal-title { min-width: 0 !important; font-size: 0.95rem; }
     #calendar-view .card-body > .d-flex { gap: 8px !important; }
 
-    /* Botão de "+" nas células fica sempre visível no toque (sem hover) */
-    .cal-cell-add { opacity: 1 !important; }
-
     /* Toolbar de abas com respiro */
     .agenda-tab-btn { padding-left: .5rem !important; padding-right: .5rem !important; }
+}
+
+/* Na faixa estreita de verdade, a toolbar superior vira botões full-width */
+@media (max-width: 575.98px) {
+    .agenda-topbar-actions { width: 100%; }
+    .agenda-topbar-actions .btn-group,
+    .agenda-topbar-actions > .btn { flex: 1 1 auto; }
+    .agenda-topbar-actions .btn { white-space: nowrap; }
 }
 </style>
 
@@ -532,7 +546,8 @@ function renderCalendar(start, end) {
             html += '</tr>';
             if (cur > end && cur.getDay() === 0) break;
         }
-        container.innerHTML = html + '</tbody></table>';
+        container.innerHTML = '<div class="cal-grid-wrap">' + html + '</tbody></table></div>'
+            + renderCalList(start, end);
     } else {
         const ws = new Date(calDate); ws.setDate(ws.getDate() - ws.getDay());
         const we = new Date(ws); we.setDate(we.getDate() + 6);
@@ -549,9 +564,62 @@ function renderCalendar(start, end) {
                 <div>${dayContent(dayStr)}</div></td>`;
             cur.setDate(cur.getDate() + 1);
         }
-        container.innerHTML = html + '</tr></tbody></table>';
+        container.innerHTML = '<div class="cal-grid-wrap">' + html + '</tr></tbody></table></div>'
+            + renderCalList(ws, we);
     }
 }
+
+/**
+ * Visão em LISTA (mobile) do calendário: eventos do período agrupados por dia.
+ * Fica escondida no desktop (CSS .cal-list{display:none}) e substitui a grade
+ * no celular, onde a grade de 7 colunas é ruim de usar.
+ */
+function renderCalList(start, end) {
+    const todayStr = fmtDate(new Date());
+    // Coleta os dias do período que têm eventos, em ordem.
+    const byDay = {};
+    calEvents.forEach(e => {
+        const day = (e.meeting_at || '').slice(0, 10);
+        if (!day) return;
+        if (day < fmtDate(start) || day > fmtDate(end)) return;
+        (byDay[day] = byDay[day] || []).push(e);
+    });
+    const days = Object.keys(byDay).sort();
+
+    let html = '<div class="cal-list">';
+    // Cabeçalho com botão de nova reunião no dia de hoje (atalho prático)
+    if (days.length === 0) {
+        html += `<div class="text-center text-muted py-5">
+            <i class="bi bi-calendar-x" style="font-size:2rem;opacity:.3;"></i>
+            <p class="mt-2 mb-1 small">Nenhuma reunião neste período.</p>
+            <button class="btn btn-sm btn-primary" onclick="openMeetingModal(null,'${todayStr}')"><i class="bi bi-plus-lg"></i> Nova reunião</button>
+        </div>`;
+    }
+    days.forEach(day => {
+        const dt = new Date(day + 'T00:00:00');
+        const isToday = day === todayStr;
+        const label = `${WEEKDAYS[dt.getDay()]}, ${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0,3)}`;
+        html += `<div class="cal-list-day ${isToday ? 'is-today' : ''}">
+            <div class="cal-list-day-hd">
+                <span>${label}${isToday ? ' <span class="badge bg-primary ms-1">Hoje</span>' : ''}</span>
+                <i class="bi bi-plus-circle cal-list-add" onclick="openMeetingModal(null,'${day}')" title="Nova reunião neste dia"></i>
+            </div>`;
+        byDay[day]
+            .sort((a, b) => (a.meeting_at || '').localeCompare(b.meeting_at || ''))
+            .forEach(e => {
+                const cat = calEventCat(e);
+                const time = (e.meeting_at || '').slice(11, 16);
+                html += `<div class="cal-list-item" style="border-left:4px solid ${cat.border};background:${cat.bg};" onclick="openMeetingModal(${e.id})">
+                    <div class="cal-list-time">${time || '—'}</div>
+                    <div class="cal-list-title" style="color:${cat.text};">${escapeHtml(e.title)}</div>
+                </div>`;
+            });
+        html += '</div>';
+    });
+    html += '</div>';
+    return html;
+}
+
 function dayContent(dayStr) {
     return eventsForDay(dayStr).map(e => {
         const cat = calEventCat(e);

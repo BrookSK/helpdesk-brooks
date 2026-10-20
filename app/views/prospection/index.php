@@ -201,20 +201,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // Inicializar editor rich text
     const editorEl = document.getElementById('pf-editor');
     if (editorEl) {
+        // No mobile usamos uma toolbar enxuta (menos botões, menos quebra de linha);
+        // no desktop, a barra completa de formatação.
+        const isMobile = window.matchMedia('(max-width: 575.98px)').matches;
+        const toolbar = isMobile
+            ? [
+                ['bold', 'italic', 'underline'],
+                [{'list': 'ordered'}, {'list': 'bullet'}],
+                ['link'],
+                ['clean']
+              ]
+            : [
+                [{'header': [1, 2, 3, false]}],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{'color': []}, {'background': []}],
+                [{'list': 'ordered'}, {'list': 'bullet'}],
+                [{'align': []}],
+                ['link', 'image'],
+                ['clean']
+              ];
         quill = new Quill('#pf-editor', {
             theme: 'snow',
             placeholder: 'Escreva sua mensagem...',
-            modules: {
-                toolbar: [
-                    [{'header': [1, 2, 3, false]}],
-                    ['bold', 'italic', 'underline', 'strike'],
-                    [{'color': []}, {'background': []}],
-                    [{'list': 'ordered'}, {'list': 'bullet'}],
-                    [{'align': []}],
-                    ['link', 'image'],
-                    ['clean']
-                ]
-            }
+            modules: { toolbar: toolbar }
         });
     }
 
@@ -453,11 +462,11 @@ function loadRecentSends() {
                 if (d.prospections && d.prospections.length) {
                     container.innerHTML = d.prospections.map(p => `
                         <div class="border-bottom py-2 px-1" style="font-size:0.75rem;">
-                            <div class="d-flex justify-content-between">
-                                <strong>${p.recipient_email}</strong>
-                                <span class="badge ${p.status === 'sent' ? 'bg-success' : 'bg-danger'}" style="font-size:0.6rem;">${p.status === 'sent' ? 'Enviado' : 'Falhou'}</span>
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <strong style="min-width:0;overflow-wrap:anywhere;word-break:break-word;">${escapeHtmlSend(p.recipient_email)}</strong>
+                                <span class="badge ${p.status === 'sent' ? 'bg-success' : 'bg-danger'} flex-shrink-0" style="font-size:0.6rem;">${p.status === 'sent' ? 'Enviado' : 'Falhou'}</span>
                             </div>
-                            <div class="text-muted">${p.subject}</div>
+                            <div class="text-muted text-truncate">${escapeHtmlSend(p.subject || '')}</div>
                             <div class="text-muted">${p.sent_at ? new Date(p.sent_at).toLocaleString('pt-BR') : '—'}</div>
                         </div>
                     `).join('');
@@ -474,10 +483,51 @@ function loadRecentSends() {
 }
 </script>
 
+<script>
+// Escape simples para os itens de "Últimos Envios" (evita HTML injetado e corta overflow).
+function escapeHtmlSend(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+</script>
+
 <style>
 #pf-editor { background: #fff; border-radius: 0 0 6px 6px; }
 .ql-toolbar { border-radius: 6px 6px 0 0; }
 .ql-container { border-radius: 0 0 6px 6px; min-height: 200px; }
+
+/* Chips de variáveis: embrulham com respiro */
+#pf-var-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ===== Mobile da tela de Enviar E-mail (~375px) ===== */
+@media (max-width: 575.98px) {
+    /* O painel lateral (Vincular a Lead / Sequência / Últimos Envios) vem
+       DEPOIS do formulário no mobile — dá um respiro entre as colunas. */
+    .main-content .row.g-3 > [class*="col-lg-4"] { margin-top: 4px; }
+
+    /* Editor: toolbar do Quill com itens que embrulham sem cortar, e altura
+       de digitação confortável no toque. */
+    .ql-toolbar.ql-snow { padding: 6px 4px; }
+    .ql-toolbar.ql-snow .ql-formats { margin-right: 8px; margin-bottom: 2px; }
+    .ql-container.ql-snow { min-height: 180px; }
+    #pf-editor { min-height: 180px; }
+
+    /* Botão Enviar ocupa a largura toda (alvo de toque grande) */
+    #pf-send-btn { width: 100%; }
+    .d-flex.justify-content-end.mt-3 { justify-content: stretch !important; }
+
+    /* Chips de variáveis um pouco maiores para tocar melhor */
+    #pf-var-chips .btn { font-size: 0.72rem !important; padding: 3px 7px !important; }
+
+    /* Campos/selects a 16px evitam o zoom automático do iOS ao focar */
+    .main-content .form-control,
+    .main-content .form-control-sm,
+    .main-content .form-select,
+    .main-content .form-select-sm { font-size: 16px; }
+
+    /* Últimos envios: não deixa e-mails longos estourarem o card */
+    #recent-sends strong { font-size: 0.78rem; }
+
+    /* Badge de status no header do card do form não cola no título */
+    #send-status { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 </style>
 
 <?php require APP_PATH . '/views/layouts/_var_picker.php'; ?>

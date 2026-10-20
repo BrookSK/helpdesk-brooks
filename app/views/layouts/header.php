@@ -448,6 +448,13 @@
 
             /* Tabelas longas rolam com indicação de toque */
             .table-responsive { -webkit-overflow-scrolling: touch; }
+
+            /* Campos a 16px evitam o zoom automático do iOS ao focar inputs */
+            .form-control, .form-control-sm,
+            .form-select, .form-select-sm { font-size: 16px; }
+
+            /* Strings longas (e-mails, URLs) não forçam rolagem horizontal */
+            .text-break-mobile { overflow-wrap: anywhere; word-break: break-word; }
         }
     </style>
 </head>

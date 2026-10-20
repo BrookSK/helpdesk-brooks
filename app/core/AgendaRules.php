@@ -149,4 +149,118 @@ class AgendaRules
         }
         return $guests;
     }
+
+    /**
+     * Valida e normaliza a lista de CLIENTES de uma reunião comercial.
+     *
+     * Suporta múltiplos clientes por reunião via arrays paralelos. Cada
+     * cliente pode vir do CRM (contact_id) e/ou trazer um snapshot
+     * (nome/telefone/e-mail) quando a origem foi "Empresa → Contato".
+     *
+     * Regra de validade: um cliente é mantido quando tem contact_id (lead do
+     * CRM, que já carrega os dados) OU um nome (snapshot). Linhas totalmente
+     * vazias são descartadas. E-mails inválidos são limpos (viram ''); o
+     * telefone é reduzido a dígitos. O contact_id só é aceito como inteiro > 0.
+     *
+     * Deduplica por contact_id (quando presente) e, no snapshot, por
+     * (nome+e-mail+telefone) normalizados, preservando a ordem de chegada —
+     * a primeira ocorrência vence (posição 0 = cliente principal).
+     *
+     * @param array|string $contactIds
+     * @param array|string $names
+     * @param array|string $emails
+     * @param array|string $phones
+     * @return array<int, array{contact_id:?int, name:string, email:string, phone:string}>
+     */
+    public static function parseClients($contactIds, $names, $emails, $phones): array
+    {
+        if (!is_array($contactIds)) $contactIds = [$contactIds];
+        if (!is_array($names))      $names      = [$names];
+        if (!is_array($emails))     $emails     = [$emails];
+        if (!is_array($phones))     $phones     = [$phones];
+
+        $clients = [];
+        $seenContacts = [];
+        $seenSnapshots = [];
+        $count = max(count($contactIds), count($names), count($emails), count($phones));
+
+        for ($i = 0; $i < $count; $i++) {
+            $cid   = (int) ($contactIds[$i] ?? 0);
+            $cid   = $cid > 0 ? $cid : null;
+            $name  = trim((string) ($names[$i]  ?? ''));
+            $email = trim((string) ($emails[$i] ?? ''));
+            $phone = preg_replace('/\D/', '', trim((string) ($phones[$i] ?? '')));
+
+            // Descarta linhas totalmente vazias.
+            if ($cid === null && $name === '' && $email === '' && $phone === '') continue;
+            // Precisa de vínculo de CRM OU de um nome (snapshot).
+            if ($cid === null && $name === '') continue;
+            // E-mail inválido é limpo (não invalida o cliente: nome/contact_id bastam).
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) $email = '';
+
+            // Deduplicação.
+            if ($cid !== null) {
+                if (isset($seenContacts[$cid])) continue;
+                $seenContacts[$cid] = true;
+            } else {
+                $key = mb_strtolower($name) . '|' . mb_strtolower($email) . '|' . $phone;
+                if (isset($seenSnapshots[$key])) continue;
+                $seenSnapshots[$key] = true;
+            }
+
+            $clients[] = [
+                'contact_id' => $cid,
+                'name'  => $name,
+                'email' => $email,
+                'phone' => $phone,
+            ];
+        }
+        return $clients;
+    }
+
+    /** Opções de reunião possíveis (seletor do modal). */
+    public const MEETING_MODES = ['', 'meet', 'room'];
+
+    /**
+     * Normaliza a opção de reunião escolhida no modal:
+     *   '' = Nenhuma, 'meet' = Google Meet, 'room' = Sala de vídeo do sistema.
+     *
+     * Para compatibilidade com versões antigas do modal (que não enviavam o
+     * modo), deduz pelo link já gerado: se há link e ele é da sala nativa →
+     * 'room'; se há link e não é nativo → 'meet'; sem link → '' (Nenhuma).
+     *
+     * @param string|null $mode            Valor cru de meeting_mode do POST.
+     * @param string|null $meetLink        Link já gerado (meet_link), se houver.
+     * @param bool        $linkIsNativeRoom O link aponta para a sala nativa?
+     */
+    public static function resolveMeetingMode($mode, $meetLink, bool $linkIsNativeRoom): string
+    {
+        $mode = (string) $mode;
+        if (in_array($mode, ['meet', 'room'], true)) {
+            return $mode;
+        }
+        // Modo ausente/!= conhecido: deduz pelo link.
+        $meetLink = trim((string) $meetLink);
+        if ($meetLink !== '') {
+            return $linkIsNativeRoom ? 'room' : 'meet';
+        }
+        return '';
+    }
+
+    /**
+     * Deve criar um NOVO evento no Google (com Meet) ao salvar a reunião?
+     *
+     * Só quando a opção é "Google Meet" E ainda não há um evento criado
+     * (google_event_id vazio). Para "Sala de vídeo do sistema" ('room') ou
+     * "Nenhuma" ('') nunca cria — evitando gerar Meet indevido e sobrescrever
+     * o link da sala do sistema.
+     *
+     * @param string      $mode             Modo normalizado (via resolveMeetingMode).
+     * @param string|null $existingEventId  google_event_id já presente, se houver.
+     */
+    public static function shouldCreateGoogleEvent(string $mode, $existingEventId): bool
+    {
+        if ($mode !== 'meet') return false;
+        return trim((string) $existingEventId) === '';
+    }
 }
